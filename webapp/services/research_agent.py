@@ -42,9 +42,9 @@ EXTRACTION_METHODS = [
 ]
 
 
-# Method section template - generated dynamically for each discovered method
+# Method section template - generated dynamically for each discovered method (Runbook Format)
 def create_method_section(method_name: str, section_number: int) -> ResearchSection:
-    """Create a deep-dive section for a specific extraction method."""
+    """Create a deep-dive section for a specific extraction method in runbook format."""
     return ResearchSection(
         number=section_number,
         name=f"{method_name} Deep Dive",
@@ -53,17 +53,138 @@ def create_method_section(method_name: str, section_number: int) -> ResearchSect
         is_method_section=True,
         method_name=method_name,
         prompts=[
-            f"Describe the {method_name} for {{connector}} in detail.",
-            f"**Authentication**: What authentication methods are supported for {method_name}? (OAuth, API Key, Basic Auth, etc.) Provide exact steps and code examples.",
-            f"**Base URL/Endpoint Structure**: What is the base URL? What is the endpoint naming convention?",
-            f"**Available Operations**: List all key endpoints/operations available via {method_name}. Create a table with: Operation Name, HTTP Method (if applicable), URL/Query, Description.",
-            f"**Objects Accessible**: Which data objects/entities can be accessed via {method_name}? Are there any objects NOT accessible via this method?",
-            f"**Pagination**: How does pagination work? (cursor-based, offset-based, page-based) What are the max records per request? Provide code example.",
-            f"**Rate Limits**: What are the specific rate limits for {method_name}? (requests per minute/hour/day) Are limits per user, app, or account?",
-            f"**Sync Capabilities**: What sync modes are supported via {method_name}? (Full Load, Incremental, CDC/Real-time) What cursor fields are available for incremental sync?",
-            f"**Delete Detection**: How can deletions be detected via {method_name}? (Soft delete fields, deleted endpoint, events, etc.)",
-            f"**Code Example**: Provide a complete Python code example showing how to authenticate and extract data from 2-3 key objects using {method_name}, including pagination handling.",
-            f"**Pros & Cons**: What are the advantages and disadvantages of using {method_name} compared to other available methods? When should you use this method vs others?"
+            f"""Generate a comprehensive RUNBOOK for {method_name} extraction from {{connector}}. 
+Use step-by-step format with numbered procedures, code examples, and verification steps.
+
+## {method_name} Extraction Runbook
+
+### Prerequisites Checklist
+- [ ] Prerequisite 1 (e.g., API access approved)
+- [ ] Prerequisite 2 (e.g., Credentials obtained)  
+- [ ] Prerequisite 3 (e.g., Network access verified)
+
+### Step 1: Authentication Setup
+
+**1.1 Obtain Credentials**
+| Credential | Where to Get | Format |
+|------------|--------------|--------|
+| (credential name) | (location/portal) | (format) |
+
+**1.2 Authentication Code**
+```python
+# Complete, runnable authentication code
+# Include: imports, configuration, token acquisition
+```
+
+**1.3 Verify Authentication**
+```python
+# Code to verify auth is working
+# Expected output: (describe expected result)
+```
+
+### Step 2: Discover Available Objects
+
+**2.1 List All Objects**
+```python
+# Code to list/discover available objects
+```
+
+**2.2 Objects Inventory**
+| Object | Endpoint/Query | Primary Key | Incremental Field | Notes |
+|--------|----------------|-------------|-------------------|-------|
+| (Complete table of ALL accessible objects) |
+
+### Step 3: Extract Data (Full Load)
+
+**3.1 Full Load Procedure**
+```python
+# Complete code for full extraction with pagination
+def extract_full_load(object_name):
+    # Implementation with error handling
+    pass
+```
+
+**3.2 Verification**
+- Expected record count: (how to verify)
+- Data quality check: (what to check)
+
+### Step 4: Extract Data (Incremental)
+
+**4.1 Incremental Load Procedure**
+```python
+# Code for incremental extraction using cursor field
+def extract_incremental(object_name, last_cursor):
+    # Implementation
+    pass
+```
+
+**4.2 Cursor Management**
+| Object | Cursor Field | Format | Storage Method |
+|--------|--------------|--------|----------------|
+| (list objects with their cursor fields) |
+
+### Step 5: Handle Pagination
+
+**5.1 Pagination Details**
+| Property | Value |
+|----------|-------|
+| Type | (cursor/offset/page) |
+| Max Per Request | (number) |
+| Next Page Indicator | (field/header) |
+
+**5.2 Pagination Code**
+```python
+# Complete pagination handling code
+def paginate_results(endpoint):
+    # Handle all pagination scenarios
+    pass
+```
+
+### Step 6: Error Handling
+
+**6.1 Common Errors**
+| Error Code | Meaning | Action | Retry |
+|------------|---------|--------|-------|
+| (list all relevant error codes) |
+
+**6.2 Error Handling Code**
+```python
+# Robust error handling with retry logic
+```
+
+### Step 7: Rate Limit Management
+
+**7.1 Rate Limits**
+| Limit Type | Value | Scope | Header |
+|------------|-------|-------|--------|
+| (document all rate limits) |
+
+**7.2 Rate Limiter Implementation**
+```python
+# Rate limiting code with backoff
+```
+
+### Troubleshooting Guide
+
+| Symptom | Diagnosis | Resolution |
+|---------|-----------|------------|
+| (common issue 1) | (how to diagnose) | (how to fix) |
+| (common issue 2) | (how to diagnose) | (how to fix) |
+
+### Performance Optimization Tips
+1. (Tip 1 for better performance)
+2. (Tip 2)
+3. (Tip 3)
+
+### Pros & Cons Summary
+| Pros | Cons |
+|------|------|
+| (advantage 1) | (disadvantage 1) |
+| (advantage 2) | (disadvantage 2) |
+
+**Best Use Case:** (when to use this method)
+**Avoid When:** (when NOT to use this method)
+"""
         ]
     )
 
@@ -190,6 +311,394 @@ FINAL_SECTIONS = [
         "**Testing**: [ ] Sandbox testing complete, [ ] Load testing done",
         "What are the top 10 things that can go wrong in production?",
         "What monitoring and alerting should be in place?"
+    ]),
+]
+
+
+# Phase 5: Core Functional Requirements (Enterprise)
+FUNCTIONAL_SECTIONS = [
+    ResearchSection(300, "Data Source Specification", 5, "Core Functional Requirements", [
+        """Provide complete data source specification for {connector}:
+
+### Source System Details
+| Property | Value |
+|----------|-------|
+| **System Type** | (SaaS Application / Database / File System / API Gateway) |
+| **API Version** | (Current stable version, e.g., v2.1, 2024-01) |
+| **Base URL(s)** | (Production, Sandbox URLs) |
+| **Supported Protocols** | (HTTPS, JDBC, ODBC, etc.) |
+| **Data Formats** | (JSON, XML, CSV, Parquet, etc.) |
+
+### Connection Requirements
+| Requirement | Details |
+|-------------|---------|
+| **Authentication** | (OAuth 2.0, API Key, Basic Auth, Certificate) |
+| **Network** | (Public Internet, VPN, Private Link, IP Whitelist) |
+| **Firewall Rules** | (Ports, IP ranges to allow) |
+| **SSL/TLS** | (Required? Minimum version?) |
+
+### API Capabilities Matrix
+| Capability | Supported | Notes |
+|------------|-----------|-------|
+| REST API | Yes/No | |
+| GraphQL | Yes/No | |
+| Webhooks | Yes/No | |
+| Bulk Export | Yes/No | |
+| Real-time Streaming | Yes/No | |
+| File Export | Yes/No | |
+"""
+    ]),
+    
+    ResearchSection(301, "Extraction Method Selection", 5, "Core Functional Requirements", [
+        """Create an extraction method selection guide for {connector}:
+
+### Extraction Methods Decision Matrix
+| Object | Full Load | Incremental | CDC | Recommended | Reason |
+|--------|-----------|-------------|-----|-------------|--------|
+| (For each major object, specify which methods are supported and recommended) |
+
+### Full Extraction Strategy
+- **When to use**: Initial load, data reconciliation, small tables
+- **Implementation**: Query all records without filters
+- **Considerations**: Volume limits, API quotas, network bandwidth
+
+### Incremental Extraction Strategy  
+- **When to use**: Regular syncs, large tables, frequent updates
+- **Cursor Fields**: List available cursor fields per object (updated_at, modified_date, etc.)
+- **Window Strategy**: Time-based vs ID-based windowing
+- **Gap Handling**: How to handle missed windows or failures
+
+### Source-Driven Notification (CDC/Webhooks)
+- **Available Events**: List webhook events or CDC streams available
+- **Event Payload**: What data is included in notifications
+- **Ordering Guarantees**: Are events ordered? How to handle out-of-order?
+- **Replay Capability**: Can missed events be replayed?
+
+### Hybrid Approach Recommendation
+Describe the optimal combination of methods for production use.
+"""
+    ]),
+    
+    ResearchSection(302, "Transformation & Cleansing Rules", 5, "Core Functional Requirements", [
+        """Define transformation and cleansing rules for {connector} data:
+
+### Field Mapping Standards
+| Source Field | Target Field | Transformation | Example |
+|--------------|--------------|----------------|---------|
+| (Document key field mappings with any transformations needed) |
+
+### Data Type Conversions
+| Source Type | Target Type | Conversion Rule | Edge Cases |
+|-------------|-------------|-----------------|------------|
+| datetime (ISO 8601) | timestamp | Parse with timezone | Null handling |
+| decimal string | numeric | Cast with precision | Overflow handling |
+| nested JSON | flattened columns | Dot notation | Array handling |
+
+### Cleansing Rules
+| Rule | Description | Implementation |
+|------|-------------|----------------|
+| **Null Handling** | How to handle NULL/missing values | (Default value, skip, flag) |
+| **Duplicate Detection** | Identify and handle duplicates | (Primary key, composite key) |
+| **Invalid Data** | Handle data outside valid ranges | (Reject, correct, flag) |
+| **Encoding** | Character encoding standardization | (UTF-8 normalization) |
+
+### Calculated Fields
+| Field | Formula | Dependencies | Update Frequency |
+|-------|---------|--------------|------------------|
+| (Define any derived/calculated fields needed) |
+"""
+    ]),
+    
+    ResearchSection(303, "Data Validation Framework", 5, "Core Functional Requirements", [
+        """Create a data validation framework for {connector}:
+
+### Schema Validation Rules
+| Object | Field | Type | Required | Constraints | Validation Code |
+|--------|-------|------|----------|-------------|-----------------|
+| (Define validation rules for key fields) |
+
+### Business Rule Validations
+| Rule ID | Description | Severity | Action on Failure |
+|---------|-------------|----------|-------------------|
+| BV001 | (Business validation rule) | Error/Warning | Reject/Flag/Log |
+
+### Referential Integrity Checks
+| Parent Object | Child Object | Foreign Key | On Violation |
+|---------------|--------------|-------------|--------------|
+| (Define parent-child integrity rules) |
+
+### Data Quality Metrics
+| Metric | Formula | Threshold | Alert Level |
+|--------|---------|-----------|-------------|
+| **Completeness** | Non-null count / Total count | > 95% | Warning < 90% |
+| **Accuracy** | Valid values / Total values | > 99% | Error < 95% |
+| **Timeliness** | Records within SLA / Total | > 99% | Error < 95% |
+| **Consistency** | Matching records / Total | 100% | Error < 100% |
+
+### Validation Code Example
+```python
+# Provide Python validation code example
+```
+"""
+    ]),
+    
+    ResearchSection(304, "Loading Strategy Decision Tree", 5, "Core Functional Requirements", [
+        """Define loading strategies for {connector} data:
+
+### Loading Mode Selection
+| Scenario | Loading Mode | Description |
+|----------|--------------|-------------|
+| Initial Load | Full Overwrite | Replace all target data |
+| Regular Sync | Incremental Append | Add new records only |
+| Updates Detected | Upsert (Merge) | Insert or update based on key |
+| SCD Required | Type 2 History | Maintain historical versions |
+
+### Target System Considerations
+| Target Type | Recommended Strategy | Batch Size | Parallelism |
+|-------------|---------------------|------------|-------------|
+| Data Warehouse | Bulk Insert | 10,000-100,000 | 4-8 threads |
+| Data Lake | Partitioned Write | By date/key | Parallel partitions |
+| Database | Batch Upsert | 1,000-5,000 | 2-4 connections |
+
+### Merge/Upsert Logic
+```sql
+-- Provide SQL merge pattern for the target system
+```
+
+### Slowly Changing Dimensions (SCD)
+| SCD Type | Use Case | Implementation |
+|----------|----------|----------------|
+| Type 1 | Overwrite old values | UPDATE existing rows |
+| Type 2 | Keep history | Add new row, close old |
+| Type 3 | Limited history | Add previous value column |
+
+### Loading Sequence (Dependency Order)
+1. (List objects in correct loading order based on dependencies)
+"""
+    ]),
+]
+
+
+# Phase 6: Technical & Operational Requirements (Enterprise)
+OPERATIONAL_SECTIONS = [
+    ResearchSection(400, "Connectivity Runbook", 6, "Technical Operations", [
+        """Create a step-by-step connectivity runbook for {connector}:
+
+### Prerequisites Checklist
+- [ ] Admin access to {connector} account
+- [ ] Network access to API endpoints verified
+- [ ] Required permissions/scopes identified
+- [ ] Development/sandbox environment available
+
+### Step 1: Network Connectivity Verification
+```bash
+# Verify API endpoint is reachable
+curl -I https://api.{connector}.com/health
+# Expected: HTTP 200 OK
+```
+
+### Step 2: Application Registration
+1. Navigate to Developer Portal / Admin Console
+2. Create new application/integration
+3. Configure OAuth redirect URIs (if applicable)
+4. Note down: Client ID, Client Secret, API Key
+
+### Step 3: Authentication Setup
+```python
+# Provide complete authentication code
+# Include: token acquisition, refresh logic, error handling
+```
+
+### Step 4: Connection Test
+```python
+# Provide connection test code
+# Verify: auth works, can list objects, can read data
+```
+
+### Step 5: Permissions Verification
+```python
+# Test each required permission/scope
+# Document which objects each permission grants access to
+```
+
+### Troubleshooting Guide
+| Symptom | Possible Cause | Resolution |
+|---------|----------------|------------|
+| Connection timeout | Firewall blocking | Whitelist IPs |
+| 401 Unauthorized | Invalid credentials | Regenerate API key |
+| 403 Forbidden | Missing permissions | Request additional scopes |
+| 429 Rate Limited | Too many requests | Implement backoff |
+| SSL Error | Certificate issue | Update CA bundle |
+"""
+    ]),
+    
+    ResearchSection(401, "Volume & Performance Guide", 6, "Technical Operations", [
+        """Create volume and performance guidelines for {connector}:
+
+### Expected Data Volumes
+| Object | Typical Record Count | Record Size | Daily Change Rate |
+|--------|---------------------|-------------|-------------------|
+| (Estimate volumes for key objects) |
+
+### Performance Benchmarks
+| Operation | Expected Throughput | Latency Target | Notes |
+|-----------|--------------------|-----------------| ------|
+| List objects | X records/second | < 500ms | With pagination |
+| Get single record | 1 record | < 200ms | By ID |
+| Bulk export | X records/minute | N/A | Async job |
+| Webhook delivery | Real-time | < 5 seconds | Event to receipt |
+
+### Batch Size Recommendations
+| API Type | Recommended Batch | Max Batch | Reason |
+|----------|-------------------|-----------|--------|
+| REST List | 100-250 | 1000 | Balance throughput vs memory |
+| Bulk API | 10,000 | 100,000 | Job processing time |
+| Webhook | N/A | N/A | Event-driven |
+
+### Scheduling Recommendations
+| Sync Type | Frequency | Window | Rationale |
+|-----------|-----------|--------|-----------|
+| Full Load | Weekly | Off-peak hours | High volume, low frequency |
+| Incremental | Every 15-60 min | Continuous | Near real-time updates |
+| CDC/Webhooks | Real-time | Continuous | Immediate consistency |
+
+### Scalability Considerations
+- **Horizontal Scaling**: Can run multiple extractors in parallel?
+- **Rate Limit Sharing**: How are limits shared across instances?
+- **Connection Pooling**: Recommended pool size and timeout settings
+"""
+    ]),
+    
+    ResearchSection(402, "Error Handling Procedures", 6, "Technical Operations", [
+        """Create error handling procedures for {connector}:
+
+### Error Classification
+| Error Category | HTTP Codes | Retryable | Max Retries | Backoff |
+|----------------|------------|-----------|-------------|---------|
+| Client Error | 400, 404 | No | 0 | N/A |
+| Auth Error | 401, 403 | Maybe | 1 | Re-auth then retry |
+| Rate Limit | 429 | Yes | 5 | Exponential + Retry-After |
+| Server Error | 500, 502, 503 | Yes | 3 | Exponential |
+| Timeout | N/A | Yes | 3 | Linear increase |
+
+### Error Response Parsing
+```python
+# Provide error parsing code that extracts:
+# - Error code, message, details
+# - Retry-After header (if present)
+# - Request ID for support tickets
+```
+
+### Retry Strategy Implementation
+```python
+# Provide exponential backoff implementation
+# Include: jitter, max retries, circuit breaker
+```
+
+### Recovery Procedures
+| Failure Scenario | Detection | Recovery Action | Escalation |
+|------------------|-----------|-----------------|------------|
+| Auth token expired | 401 response | Refresh token | Alert if refresh fails |
+| Rate limit exceeded | 429 response | Backoff and retry | Reduce concurrency |
+| API unavailable | 503 / timeout | Retry with backoff | Page on-call after 5 min |
+| Data corruption | Validation failure | Quarantine record | Manual review |
+
+### Alerting Rules
+| Alert | Condition | Severity | Response Time |
+|-------|-----------|----------|---------------|
+| Sync Failed | 3 consecutive failures | High | 15 minutes |
+| High Error Rate | > 5% errors in 5 min | Medium | 1 hour |
+| Auth Failure | Any 401 after refresh | Critical | Immediate |
+"""
+    ]),
+    
+    ResearchSection(403, "Monitoring & Alerting Setup", 6, "Technical Operations", [
+        """Create monitoring and alerting configuration for {connector}:
+
+### Key Metrics to Track
+| Metric | Description | Collection Method | Granularity |
+|--------|-------------|-------------------|-------------|
+| **records_extracted** | Total records pulled | Counter | Per sync |
+| **extraction_duration_seconds** | Time to complete extraction | Histogram | Per object |
+| **api_requests_total** | Total API calls made | Counter | Continuous |
+| **api_errors_total** | Failed API calls | Counter by error type | Continuous |
+| **rate_limit_hits** | Times rate limited | Counter | Continuous |
+| **data_freshness_seconds** | Age of newest record | Gauge | Per object |
+
+### Dashboard Panels
+1. **Sync Overview**: Success rate, records/hour, active syncs
+2. **API Health**: Request rate, error rate, latency percentiles
+3. **Data Quality**: Validation pass rate, null rates, schema drift
+4. **Resource Usage**: Memory, CPU, connections, queue depth
+
+### Alert Definitions
+| Alert Name | Condition | Severity | Notification |
+|------------|-----------|----------|--------------|
+| SyncFailed | sync_status = failed for > 5 min | P1 | PagerDuty |
+| HighErrorRate | error_rate > 5% for 10 min | P2 | Slack |
+| DataStale | freshness > 2 hours | P2 | Slack |
+| RateLimitCritical | rate_limit_hits > 100/min | P3 | Email |
+
+### Prometheus/Grafana Configuration
+```yaml
+# Provide example Prometheus alerting rules
+```
+
+### Health Check Endpoint
+```python
+# Provide health check implementation that verifies:
+# - API connectivity, Auth validity, Recent sync success
+```
+"""
+    ]),
+    
+    ResearchSection(404, "Audit & Compliance Requirements", 6, "Technical Operations", [
+        """Create audit and compliance documentation for {connector}:
+
+### Data Lineage Tracking
+| Field | Source | Transformation | Target | Timestamp |
+|-------|--------|----------------|--------|-----------|
+| (Document data lineage for key fields) |
+
+### Audit Log Schema
+```json
+{
+  "event_id": "uuid",
+  "timestamp": "ISO 8601",
+  "event_type": "extraction|transformation|load|error",
+  "connector": "{connector}",
+  "object": "object_name",
+  "record_count": 1000,
+  "duration_ms": 5000,
+  "status": "success|failure",
+  "error_message": null,
+  "user": "service_account",
+  "source_system": "{connector}",
+  "target_system": "data_warehouse"
+}
+```
+
+### Compliance Checklist
+| Requirement | Implementation | Verification |
+|-------------|----------------|--------------|
+| **Data Encryption** | TLS 1.2+ in transit, AES-256 at rest | Certificate check |
+| **Access Control** | Service account with minimum privileges | Permission audit |
+| **Audit Trail** | All operations logged with timestamps | Log review |
+| **Data Retention** | Logs retained for X days | Retention policy |
+| **PII Handling** | Masked/tokenized in logs | Log sampling |
+
+### Data Classification
+| Object | Contains PII | Contains Financial | Sensitivity | Handling |
+|--------|-------------|-------------------|-------------|----------|
+| (Classify each object by data sensitivity) |
+
+### Retention & Purging
+| Data Type | Retention Period | Purge Method | Compliance Reason |
+|-----------|------------------|--------------|-------------------|
+| Raw extraction logs | 90 days | Auto-delete | Storage cost |
+| Audit records | 7 years | Archive then delete | SOX compliance |
+| Error records | 30 days | Auto-delete | Troubleshooting |
+"""
     ]),
 ]
 
@@ -420,6 +929,131 @@ class ResearchAgent:
             'missing_count': len(missing_objects)
         }
     
+    def _generate_expert_review_template(
+        self,
+        connector_name: str,
+        discovered_methods: List[str]
+    ) -> str:
+        """Generate an expert review checklist template for SME validation.
+        
+        Args:
+            connector_name: Name of the connector
+            discovered_methods: List of discovered extraction methods
+            
+        Returns:
+            Markdown string for expert review template
+        """
+        review_template = f"""
+
+---
+
+# 📋 Appendix: Expert Review Template
+
+> **Purpose:** This checklist helps Subject Matter Experts (SMEs) validate the research accuracy before using it for production implementation.
+
+## 🔐 Authentication Review
+
+| Item | Status | Reviewer Notes |
+|------|--------|----------------|
+| [ ] Auth method(s) documented match current API docs | ⬜ | |
+| [ ] OAuth scopes are complete and accurate | ⬜ | |
+| [ ] Token lifetime and refresh process verified | ⬜ | |
+| [ ] Service account requirements documented | ⬜ | |
+| [ ] Multi-tenant auth flow confirmed (if applicable) | ⬜ | |
+
+## 📦 Objects & Schema Review
+
+| Item | Status | Reviewer Notes |
+|------|--------|----------------|
+| [ ] Object list is complete (no missing objects) | ⬜ | |
+| [ ] Primary keys correctly identified | ⬜ | |
+| [ ] Cursor fields for incremental sync verified | ⬜ | |
+| [ ] Parent-child relationships accurate | ⬜ | |
+| [ ] Data types match API response format | ⬜ | |
+| [ ] Required fields/permissions verified | ⬜ | |
+
+## ⚡ Rate Limits Review
+
+| Item | Status | Reviewer Notes |
+|------|--------|----------------|
+| [ ] Rate limits match current documentation | ⬜ | |
+| [ ] Tested empirically with actual API calls | ⬜ | |
+| [ ] Backoff strategy appropriate for limits | ⬜ | |
+| [ ] Concurrency limits documented | ⬜ | |
+| [ ] Bulk API limits (if applicable) verified | ⬜ | |
+
+## 📄 Pagination Review
+
+| Item | Status | Reviewer Notes |
+|------|--------|----------------|
+| [ ] Pagination type correctly identified | ⬜ | |
+| [ ] Max records per request verified | ⬜ | |
+| [ ] Cursor/offset field names correct | ⬜ | |
+| [ ] Edge cases handled (empty pages, last page) | ⬜ | |
+
+## 🗑️ Delete Detection Review
+
+| Item | Status | Reviewer Notes |
+|------|--------|----------------|
+| [ ] Delete detection method(s) verified | ⬜ | |
+| [ ] Soft delete fields correctly identified | ⬜ | |
+| [ ] Deleted records endpoint tested (if exists) | ⬜ | |
+| [ ] Webhook delete events documented (if exists) | ⬜ | |
+
+## 💻 Code Examples Review
+
+| Item | Status | Reviewer Notes |
+|------|--------|----------------|
+| [ ] Authentication code runs successfully | ⬜ | |
+| [ ] Pagination code handles all edge cases | ⬜ | |
+| [ ] Error handling code is production-ready | ⬜ | |
+| [ ] Code follows best practices for the language | ⬜ | |
+
+"""
+        
+        # Add method-specific review sections
+        for method in discovered_methods:
+            review_template += f"""
+## 🔍 {method} Specific Review
+
+| Item | Status | Reviewer Notes |
+|------|--------|----------------|
+| [ ] Base URL/endpoint is current | ⬜ | |
+| [ ] All endpoints listed are accessible | ⬜ | |
+| [ ] Response format matches documentation | ⬜ | |
+| [ ] Error codes are complete | ⬜ | |
+| [ ] Tested with sandbox/dev environment | ⬜ | |
+
+"""
+        
+        review_template += """
+## ✅ Final Sign-Off
+
+| Reviewer | Role | Date | Signature |
+|----------|------|------|-----------|
+| | Technical Lead | | |
+| | Domain Expert | | |
+| | Security Review | | |
+
+### Review Summary
+
+**Overall Assessment:** ⬜ Approved ⬜ Approved with Changes ⬜ Needs Revision
+
+**Critical Issues Found:**
+1. 
+2. 
+
+**Recommendations:**
+1. 
+2. 
+
+---
+
+*This review template was auto-generated. Please customize based on your organization's requirements.*
+"""
+        
+        return review_template
+    
     def _generate_quick_summary(
         self,
         connector_name: str,
@@ -620,8 +1254,12 @@ class ResearchAgent:
             
             results = []
             for i, result in enumerate(response.get('results', []), 1):
-                results.append(f"[web:{i}] {result.get('title', 'No title')}")
-                results.append(f"URL: {result.get('url', '')}")
+                # Classify source type for confidence scoring
+                url = result.get('url', '')
+                source_type = self._classify_source(url)
+                
+                results.append(f"[web:{i}] [{source_type}] {result.get('title', 'No title')}")
+                results.append(f"URL: {url}")
                 results.append(f"Content: {result.get('content', '')[:500]}...")
                 results.append("")
             
@@ -629,6 +1267,155 @@ class ResearchAgent:
             
         except Exception as e:
             return f"Web search error: {str(e)}"
+    
+    def _classify_source(self, url: str) -> str:
+        """Classify source type for confidence scoring.
+        
+        Args:
+            url: The URL to classify
+            
+        Returns:
+            Source type classification
+        """
+        url_lower = url.lower()
+        
+        # Official documentation
+        if any(x in url_lower for x in ['docs.', '/docs/', 'documentation', 'developers.', 'developer.', '/api/']):
+            return 'OFFICIAL'
+        
+        # GitHub
+        if 'github.com' in url_lower:
+            if '/issues/' in url_lower or '/discussions/' in url_lower:
+                return 'GITHUB-ISSUES'
+            return 'GITHUB'
+        
+        # Stack Overflow / Community
+        if any(x in url_lower for x in ['stackoverflow.com', 'stackexchange.com', 'community.', 'forum.']):
+            return 'COMMUNITY'
+        
+        # Known connector platforms
+        if any(x in url_lower for x in ['fivetran.com', 'airbyte.io', 'singer.io', 'meltano.com']):
+            return 'CONNECTOR-REF'
+        
+        # Changelogs
+        if any(x in url_lower for x in ['changelog', 'release', 'what-s-new', 'updates']):
+            return 'CHANGELOG'
+        
+        # Blog/Article
+        if any(x in url_lower for x in ['blog.', 'medium.com', 'dev.to', 'article']):
+            return 'BLOG'
+        
+        return 'OTHER'
+    
+    async def _verify_with_multiple_sources(
+        self,
+        connector_name: str,
+        claim: str,
+        claim_type: str = "general"
+    ) -> Dict[str, Any]:
+        """Verify a claim by searching multiple source types.
+        
+        Args:
+            connector_name: Name of the connector
+            claim: The claim to verify (e.g., "supports OAuth 2.0")
+            claim_type: Type of claim (auth, rate_limit, object, etc.)
+            
+        Returns:
+            Dict with confidence score and source details
+        """
+        source_queries = {
+            'auth': [
+                f"{connector_name} API authentication documentation",
+                f"{connector_name} OAuth setup site:github.com",
+                f"{connector_name} API key authentication stackoverflow"
+            ],
+            'rate_limit': [
+                f"{connector_name} API rate limits documentation",
+                f"{connector_name} rate limit 429 site:github.com issues",
+                f"{connector_name} API throttling limits"
+            ],
+            'object': [
+                f"{connector_name} API {claim} endpoint documentation",
+                f"{connector_name} {claim} schema",
+                f"Fivetran {connector_name} {claim} supported"
+            ],
+            'general': [
+                f"{connector_name} {claim} official documentation",
+                f"{connector_name} {claim} site:github.com",
+                f"{connector_name} {claim} example"
+            ]
+        }
+        
+        queries = source_queries.get(claim_type, source_queries['general'])
+        
+        sources_found = {
+            'OFFICIAL': [],
+            'GITHUB': [],
+            'GITHUB-ISSUES': [],
+            'COMMUNITY': [],
+            'CONNECTOR-REF': [],
+            'CHANGELOG': [],
+            'BLOG': [],
+            'OTHER': []
+        }
+        
+        # Search each query and classify results
+        for query in queries[:2]:  # Limit to 2 queries to manage API costs
+            try:
+                results = await self._web_search(query)
+                for line in results.split('\n'):
+                    if line.startswith('[web:'):
+                        # Extract source type from the line
+                        for source_type in sources_found.keys():
+                            if f'[{source_type}]' in line:
+                                sources_found[source_type].append(line)
+                                break
+            except Exception:
+                pass
+        
+        # Calculate confidence score
+        confidence_score = 0
+        confidence_reasons = []
+        
+        if sources_found['OFFICIAL']:
+            confidence_score += 40
+            confidence_reasons.append("Found in official docs")
+        
+        if sources_found['GITHUB'] or sources_found['GITHUB-ISSUES']:
+            confidence_score += 25
+            confidence_reasons.append("Confirmed on GitHub")
+        
+        if sources_found['COMMUNITY']:
+            confidence_score += 15
+            confidence_reasons.append("Community confirmed")
+        
+        if sources_found['CONNECTOR-REF']:
+            confidence_score += 15
+            confidence_reasons.append("Other connectors reference this")
+        
+        if sources_found['CHANGELOG']:
+            confidence_score += 5
+            confidence_reasons.append("Found in changelog")
+        
+        # Determine confidence level
+        if confidence_score >= 80:
+            confidence_level = "VERIFIED"
+        elif confidence_score >= 50:
+            confidence_level = "DOCUMENTED"
+        elif confidence_score >= 25:
+            confidence_level = "COMMUNITY"
+        elif confidence_score > 0:
+            confidence_level = "INFERRED"
+        else:
+            confidence_level = "UNVERIFIED"
+        
+        return {
+            'confidence_level': confidence_level,
+            'confidence_score': confidence_score,
+            'reasons': confidence_reasons,
+            'sources': sources_found,
+            'claim': claim
+        }
     
     def _build_section_context(self, section_number: int, structured_context: Dict[str, Any]) -> str:
         """Build section-specific context from structured repository data.
@@ -1269,8 +2056,10 @@ Generate comprehensive markdown content for this section. Include:
         self._current_progress.discovered_methods = discovered_methods
         print(f"  Discovered extraction methods: {', '.join(discovered_methods)}")
         
-        # Calculate total sections
-        total_sections = len(BASE_SECTIONS) + len(discovered_methods) + len(CROSS_CUTTING_SECTIONS) + len(FINAL_SECTIONS)
+        # Calculate total sections (including new enterprise phases)
+        total_sections = (len(BASE_SECTIONS) + len(discovered_methods) + 
+                         len(CROSS_CUTTING_SECTIONS) + len(FINAL_SECTIONS) +
+                         len(FUNCTIONAL_SECTIONS) + len(OPERATIONAL_SECTIONS))
         self._current_progress.total_sections = total_sections
         
         # ========================================
@@ -1382,17 +2171,10 @@ Generate comprehensive markdown content for this section. Include:
             if on_progress:
                 on_progress(self._current_progress)
             
-            # Build Fivetran context - map final sections to original section logic
+            # Build Fivetran context
             section_fivetran_context = ""
             if fivetran_context and section.requires_fivetran:
-                # Map final section names to original section numbers for Fivetran context
-                fivetran_section_map = {
-                    200: 8,   # Recommended Extraction Strategy -> Sync Strategies
-                    201: 19,  # Object Catalog & Replication Guide -> Object Catalog (Section 19)
-                    202: 16,  # Production Checklist -> Operational Test Data
-                }
-                mapped_section = fivetran_section_map.get(section.number, section.number)
-                section_fivetran_context = self._build_fivetran_section_context(mapped_section, fivetran_context)
+                section_fivetran_context = self._build_fivetran_section_context(section.number, fivetran_context)
             
             section_content = await self._generate_section(
                 section=section_copy,
@@ -1400,6 +2182,88 @@ Generate comprehensive markdown content for this section. Include:
                 connector_type=connector_type,
                 github_context=github_context_str + "\n\n" + methods_context if section.requires_code_analysis else methods_context,
                 fivetran_context=section_fivetran_context,
+                structured_context=structured_context
+            )
+            
+            document_parts.append(section_content)
+            self._current_progress.sections_completed.append(actual_section_number)
+            await asyncio.sleep(1)
+        
+        # ========================================
+        # PHASE 5: Core Functional Requirements
+        # ========================================
+        print(f"  Phase 5: Core Functional Requirements")
+        
+        functional_section_start = final_section_start + len(FINAL_SECTIONS)
+        for i, section in enumerate(FUNCTIONAL_SECTIONS):
+            if self._cancel_requested:
+                self._current_progress.status = "cancelled"
+                break
+            
+            actual_section_number = functional_section_start + i
+            section_copy = ResearchSection(
+                number=actual_section_number,
+                name=section.name,
+                phase=section.phase,
+                phase_name=section.phase_name,
+                prompts=section.prompts,
+                requires_fivetran=section.requires_fivetran,
+                requires_code_analysis=section.requires_code_analysis
+            )
+            
+            self._current_progress.current_section = actual_section_number
+            self._current_progress.current_content = f"Generating Section {actual_section_number}: {section.name}..."
+            
+            if on_progress:
+                on_progress(self._current_progress)
+            
+            section_content = await self._generate_section(
+                section=section_copy,
+                connector_name=connector_name,
+                connector_type=connector_type,
+                github_context=github_context_str + "\n\n" + methods_context,
+                fivetran_context="",
+                structured_context=structured_context
+            )
+            
+            document_parts.append(section_content)
+            self._current_progress.sections_completed.append(actual_section_number)
+            await asyncio.sleep(1)
+        
+        # ========================================
+        # PHASE 6: Technical Operations
+        # ========================================
+        print(f"  Phase 6: Technical Operations")
+        
+        operational_section_start = functional_section_start + len(FUNCTIONAL_SECTIONS)
+        for i, section in enumerate(OPERATIONAL_SECTIONS):
+            if self._cancel_requested:
+                self._current_progress.status = "cancelled"
+                break
+            
+            actual_section_number = operational_section_start + i
+            section_copy = ResearchSection(
+                number=actual_section_number,
+                name=section.name,
+                phase=section.phase,
+                phase_name=section.phase_name,
+                prompts=section.prompts,
+                requires_fivetran=section.requires_fivetran,
+                requires_code_analysis=section.requires_code_analysis
+            )
+            
+            self._current_progress.current_section = actual_section_number
+            self._current_progress.current_content = f"Generating Section {actual_section_number}: {section.name}..."
+            
+            if on_progress:
+                on_progress(self._current_progress)
+            
+            section_content = await self._generate_section(
+                section=section_copy,
+                connector_name=connector_name,
+                connector_type=connector_type,
+                github_context=github_context_str + "\n\n" + methods_context,
+                fivetran_context="",
                 structured_context=structured_context
             )
             
@@ -1441,7 +2305,9 @@ Generate comprehensive markdown content for this section. Include:
 | 1. Platform Discovery | 1-3 | Overview, Methods Discovery, Dev Environment |
 | 2. Extraction Methods | 4-{3 + len(discovered_methods)} | Deep dive for each discovered method |
 | 3. Cross-Cutting | {4 + len(discovered_methods)}-{3 + len(discovered_methods) + len(CROSS_CUTTING_SECTIONS)} | Auth, Rate Limits, Errors, Data Model, Deletes |
-| 4. Implementation | {4 + len(discovered_methods) + len(CROSS_CUTTING_SECTIONS)}-{total_sections} | Strategy, Object Catalog, Checklist |
+| 4. Implementation | {4 + len(discovered_methods) + len(CROSS_CUTTING_SECTIONS)}-{3 + len(discovered_methods) + len(CROSS_CUTTING_SECTIONS) + len(FINAL_SECTIONS)} | Strategy, Object Catalog, Checklist |
+| 5. Core Functional | {4 + len(discovered_methods) + len(CROSS_CUTTING_SECTIONS) + len(FINAL_SECTIONS)}-{3 + len(discovered_methods) + len(CROSS_CUTTING_SECTIONS) + len(FINAL_SECTIONS) + len(FUNCTIONAL_SECTIONS)} | Data Source, Extraction, Transform, Quality, Loading |
+| 6. Technical Ops | {4 + len(discovered_methods) + len(CROSS_CUTTING_SECTIONS) + len(FINAL_SECTIONS) + len(FUNCTIONAL_SECTIONS)}-{total_sections} | Connectivity, Volume, Errors, Monitoring, Audit |
 
 ---
 """
@@ -1548,6 +2414,10 @@ This research document was generated using:
 """
         
         full_document += final_section
+        
+        # Add Expert Review Template
+        expert_review = self._generate_expert_review_template(connector_name, discovered_methods)
+        full_document += expert_review
         
         # Update final status
         if not self._cancel_requested:
