@@ -28,7 +28,7 @@ from sqlalchemy import text
 from dotenv import load_dotenv
 
 from services.database import (
-    get_db_session, is_database_available,
+    get_db_session, is_database_available, init_database,
     DocumentChunkModel, PGVECTOR_AVAILABLE, EMBEDDING_DIMENSION
 )
 
@@ -148,9 +148,21 @@ class KnowledgeVault:
             raise ValueError("OPENAI_API_KEY is required")
         
         self.openai = OpenAI(api_key=self.openai_api_key)
+        
+        # Ensure database is initialized
+        db_url = os.getenv("DATABASE_URL")
+        if db_url and not is_database_available():
+            print("📚 Knowledge Vault: Database URL found but not initialized, initializing now...")
+            init_result = init_database()
+            print(f"📚 Knowledge Vault: Database init result: {init_result}")
+        
         self._pgvector_available = PGVECTOR_AVAILABLE and is_database_available()
         
         print("📚 Knowledge Vault initialized!")
+        print(f"  DATABASE_URL present: {bool(db_url)}")
+        print(f"  Database available: {is_database_available()}")
+        print(f"  pgvector available: {self._pgvector_available}")
+        
         if self._pgvector_available:
             print("  ✓ Using pgvector for semantic search")
         else:
@@ -319,9 +331,19 @@ class KnowledgeVault:
         Raises:
             RuntimeError: If indexing fails
         """
+        # Check database availability with detailed diagnostics
+        db_available = is_database_available()
+        if not db_available:
+            db_url = os.getenv("DATABASE_URL")
+            raise RuntimeError(
+                f"Database not available for Knowledge Vault. "
+                f"DATABASE_URL set: {bool(db_url)}, "
+                f"is_database_available(): {db_available}"
+            )
+        
         session = get_db_session()
         if not session:
-            raise RuntimeError("Database not available for Knowledge Vault")
+            raise RuntimeError("Database session could not be created")
         
         vault_connector_id = self._get_vault_connector_id(connector_name)
         
