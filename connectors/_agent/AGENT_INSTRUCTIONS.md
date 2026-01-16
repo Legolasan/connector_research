@@ -28,21 +28,24 @@ research_docs/connectors/
 
 ### 2. Research Process (Per Section)
 
-#### Primary Research Method: context7 MCP
+#### Primary Research Method: 🔮 DocWhisperer™ (Context7 MCP)
 ```
 1. Use resolve-library-id to find official documentation library
 2. Use get-library-docs to fetch specific sections
 3. Extract exact values, quotes, and tables from official docs
 ```
 
-#### Fallback Protocol (If context7 fails)
+> *"Ask not what the web can scrape for you, ask what DocWhisperer can whisper to you."*
+
+#### Fallback Protocol (If DocWhisperer™ is silent)
 ```
-1. STOP immediately
-2. Inform user: "context7 MCP did not return sufficient data for Section X"
+1. DocWhisperer automatically falls back to web search
+2. If web search also fails, inform user: 
+   "🔮 DocWhisperer and web search could not find data for Section X"
 3. Ask user for:
    - Official documentation root URL
-   - Explicit approval to use web search for this section
-4. Only proceed with web search after explicit approval
+   - Explicit approval to proceed with partial data
+4. Document the gap in research
 ```
 
 #### Fivetran Parity (Mandatory Web Search)

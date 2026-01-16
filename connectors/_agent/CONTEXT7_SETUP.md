@@ -1,8 +1,11 @@
-# Context7 MCP Setup Guide
+# 🔮 DocWhisperer™ (Context7 MCP) Setup Guide
 
-## What is Context7?
+## What is DocWhisperer™?
 
-Context7 is an MCP (Model Context Protocol) server that provides access to official library documentation. It allows Claude to fetch authentic, up-to-date documentation directly from official sources.
+**DocWhisperer™** is our fancy name for Context7 - an MCP (Model Context Protocol) server that provides access to official library documentation. It allows Claude to fetch authentic, up-to-date documentation directly from official sources.
+
+> *"It doesn't just search... it WHISPERS the truth from official sources"* 
+> — Ancient Developer Proverb
 
 ## Installation
 
