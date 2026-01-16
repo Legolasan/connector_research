@@ -605,7 +605,14 @@ function dashboard() {
                     if (this.bulkUploadProgress.status === 'processing') {
                         setTimeout(() => this.pollBulkUploadProgress(), 1000);
                     } else if (this.bulkUploadProgress.status === 'completed') {
-                        alert(`Bulk upload complete!\n\nProcessed: ${this.bulkUploadProgress.processed_files}/${this.bulkUploadProgress.total_files}\nSuccessful: ${this.bulkUploadProgress.successful_files}\nFailed: ${this.bulkUploadProgress.failed_files}\nTotal chunks: ${this.bulkUploadProgress.total_chunks}`);
+                        let message = `Bulk upload complete!\n\nProcessed: ${this.bulkUploadProgress.processed_files}/${this.bulkUploadProgress.total_files}\nSuccessful: ${this.bulkUploadProgress.successful_files}\nFailed: ${this.bulkUploadProgress.failed_files}\nTotal chunks: ${this.bulkUploadProgress.total_chunks}`;
+                        
+                        // Show errors if any
+                        if (this.bulkUploadProgress.errors && this.bulkUploadProgress.errors.length > 0) {
+                            message += `\n\n⚠️ Errors:\n${this.bulkUploadProgress.errors.join('\n')}`;
+                        }
+                        
+                        alert(message);
                         
                         // Reset and close
                         this.resetVaultUploadForm();

@@ -315,6 +315,9 @@ class KnowledgeVault:
             
         Returns:
             VaultDocument with indexing stats
+        
+        Raises:
+            RuntimeError: If indexing fails
         """
         session = get_db_session()
         if not session:
@@ -325,12 +328,19 @@ class KnowledgeVault:
         try:
             # Split content into chunks
             chunks = self._chunk_text(content)
+            print(f"  📄 Split into {len(chunks)} chunks")
+            
+            if not chunks:
+                raise RuntimeError("No content to index after chunking")
             
             # Create and store vectors
             created_count = 0
             for i, chunk in enumerate(chunks):
                 # Generate embedding
-                embedding = self._generate_embedding(chunk)
+                try:
+                    embedding = self._generate_embedding(chunk)
+                except Exception as e:
+                    raise RuntimeError(f"Failed to generate embedding for chunk {i}: {e}")
                 
                 # Create chunk record
                 chunk_id = self._generate_chunk_id(connector_name, title, i)
@@ -756,6 +766,8 @@ class KnowledgeVault:
             # Determine file type and process accordingly
             filename_lower = filename.lower()
             
+            print(f"📚 Processing: {filename} ({len(file_content)} bytes)")
+            
             if filename_lower.endswith('.pdf'):
                 doc = self.index_pdf(
                     connector_name=progress.connector_name,
@@ -770,6 +782,12 @@ class KnowledgeVault:
                 except UnicodeDecodeError:
                     text_content = file_content.decode('latin-1')
                 
+                # Skip empty files
+                if not text_content.strip():
+                    raise ValueError("File is empty")
+                
+                print(f"  → Decoded {len(text_content)} chars, indexing...")
+                
                 doc = self.index_document(
                     connector_name=progress.connector_name,
                     title=filename,
@@ -780,12 +798,16 @@ class KnowledgeVault:
             
             progress.successful_files += 1
             progress.total_chunks += doc.chunk_count
+            print(f"  ✓ Indexed {doc.chunk_count} chunks")
             return True
             
         except Exception as e:
+            import traceback
             progress.failed_files += 1
-            progress.errors.append(f"{filename}: {str(e)}")
+            error_msg = f"{filename}: {str(e)}"
+            progress.errors.append(error_msg)
             print(f"  ⚠ Failed to process {filename}: {e}")
+            traceback.print_exc()
             return False
         finally:
             progress.processed_files += 1

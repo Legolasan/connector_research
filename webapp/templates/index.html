@@ -611,6 +611,16 @@
                         <div x-show="bulkUploadProgress?.current_file" class="text-xs text-gray-400 mt-2 truncate">
                             Current: <span x-text="bulkUploadProgress?.current_file"></span>
                         </div>
+                        
+                        <!-- Show errors if any -->
+                        <div x-show="bulkUploadProgress?.errors && bulkUploadProgress.errors.length > 0" class="mt-3 text-xs">
+                            <div class="text-red-400 mb-1">⚠️ Errors (<span x-text="bulkUploadProgress?.failed_files || 0"></span>):</div>
+                            <div class="max-h-20 overflow-auto bg-red-500/10 rounded p-2 space-y-1">
+                                <template x-for="error in (bulkUploadProgress?.errors || [])" :key="error">
+                                    <div class="text-red-300/80 truncate" x-text="error"></div>
+                                </template>
+                            </div>
+                        </div>
                     </div>
                 </div>
                 
