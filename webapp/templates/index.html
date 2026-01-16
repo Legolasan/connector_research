@@ -443,6 +443,56 @@
                                        class="w-full px-3 py-2 bg-black/40 border border-white/10 rounded-lg focus:border-orange-500 focus:ring-1 focus:ring-orange-500 outline-none transition-all text-white placeholder-gray-500 text-sm">
                                 <p class="text-xs text-gray-600 mt-1">Objects, parent-child relationships, sync modes</p>
                             </div>
+                            
+                            <!-- Manual Object Input Section -->
+                            <div class="border-t border-white/10 pt-4 mt-4">
+                                <div class="flex items-center gap-2 mb-3">
+                                    <svg class="w-4 h-4 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path>
+                                    </svg>
+                                    <span class="text-xs font-medium text-cyan-300">Manual Object List (Alternative)</span>
+                                </div>
+                                <p class="text-xs text-gray-500 mb-3">Upload a CSV/PDF file or paste object names if Fivetran docs can't be scraped.</p>
+                                
+                                <!-- File Upload -->
+                                <div class="mb-3">
+                                    <label class="block text-xs font-medium text-gray-400 mb-1">Upload CSV or PDF</label>
+                                    <div class="flex items-center gap-2">
+                                        <label class="flex-1 flex items-center justify-center px-3 py-3 bg-black/40 border border-dashed border-white/20 hover:border-cyan-500/50 rounded-lg cursor-pointer transition-colors group">
+                                            <input type="file" 
+                                                   accept=".csv,.pdf"
+                                                   @change="handleFileUpload($event)"
+                                                   class="hidden">
+                                            <div class="text-center">
+                                                <svg class="w-6 h-6 text-gray-500 group-hover:text-cyan-400 mx-auto mb-1 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 13h6m-3-3v6m5 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+                                                </svg>
+                                                <span x-show="!newConnector.manual_file" class="text-xs text-gray-500 group-hover:text-gray-300 transition-colors">Click to upload CSV or PDF</span>
+                                                <span x-show="newConnector.manual_file" class="text-xs text-cyan-400" x-text="newConnector.manual_file?.name"></span>
+                                            </div>
+                                        </label>
+                                        <button x-show="newConnector.manual_file" 
+                                                type="button"
+                                                @click="clearFileUpload()"
+                                                class="px-3 py-3 bg-red-500/20 hover:bg-red-500/30 text-red-400 rounded-lg transition-colors">
+                                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                                            </svg>
+                                        </button>
+                                    </div>
+                                    <p class="text-xs text-gray-600 mt-1">CSV format: object_name,sync_mode,parent,primary_key,cursor_field,delete_method</p>
+                                </div>
+                                
+                                <!-- Text Input -->
+                                <div>
+                                    <label class="block text-xs font-medium text-gray-400 mb-1">Or Paste Object Names</label>
+                                    <textarea x-model="newConnector.manual_text"
+                                              placeholder="accounts&#10;contacts&#10;opportunities&#10;campaigns"
+                                              rows="3"
+                                              class="w-full px-3 py-2 bg-black/40 border border-white/10 rounded-lg focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 outline-none transition-all text-white placeholder-gray-500 text-sm resize-none"></textarea>
+                                    <p class="text-xs text-gray-600 mt-1">One object per line, or comma-separated</p>
+                                </div>
+                            </div>
                         </div>
                     </div>
                         

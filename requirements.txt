@@ -26,6 +26,12 @@ python-dotenv>=1.0.0
 # Markdown rendering
 markdown>=3.5.0
 
+# Headless Browser (for JS-rendered pages)
+playwright>=1.40.0
+
+# PDF Parsing
+pypdf>=3.17.0
+
 # Utilities
 httpx>=0.26.0
 aiofiles>=23.2.0

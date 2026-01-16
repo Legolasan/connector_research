@@ -57,6 +57,35 @@ class ConnectorProgress:
 
 
 @dataclass
+class ManualInput:
+    """Manual input for object lists (CSV, PDF, or text)."""
+    text: Optional[str] = None           # Text list of objects
+    file_content: Optional[str] = None   # CSV content or base64 PDF
+    file_type: Optional[str] = None      # 'csv' or 'pdf'
+    
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            'text': self.text,
+            'file_content': self.file_content[:1000] if self.file_content else None,  # Truncate for storage
+            'file_type': self.file_type
+        }
+    
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> Optional['ManualInput']:
+        if data is None:
+            return None
+        return cls(
+            text=data.get('text'),
+            file_content=data.get('file_content'),
+            file_type=data.get('file_type')
+        )
+    
+    def has_input(self) -> bool:
+        """Check if any manual input is provided."""
+        return bool(self.text or self.file_content)
+
+
+@dataclass
 class FivetranUrls:
     """Fivetran documentation URLs for parity comparison."""
     setup_guide_url: Optional[str] = None        # Setup Guide page (prerequisites, auth)
@@ -98,6 +127,9 @@ class Connector:
     # Fivetran parity URLs
     fivetran_urls: Optional[FivetranUrls] = None
     
+    # Manual input for object lists
+    manual_input: Optional[ManualInput] = None
+    
     # Metadata
     objects_count: int = 0
     vectors_count: int = 0
@@ -130,6 +162,9 @@ class Connector:
         # Convert fivetran_urls to dict
         if isinstance(self.fivetran_urls, FivetranUrls):
             data['fivetran_urls'] = self.fivetran_urls.to_dict()
+        # Convert manual_input to dict
+        if isinstance(self.manual_input, ManualInput):
+            data['manual_input'] = self.manual_input.to_dict()
         return data
     
     @classmethod
@@ -146,7 +181,11 @@ class Connector:
         fivetran_urls_data = data.pop('fivetran_urls', None)
         fivetran_urls = FivetranUrls.from_dict(fivetran_urls_data) if fivetran_urls_data else None
         
-        return cls(progress=progress, fivetran_urls=fivetran_urls, **data)
+        # Handle manual_input
+        manual_input_data = data.pop('manual_input', None)
+        manual_input = ManualInput.from_dict(manual_input_data) if manual_input_data else None
+        
+        return cls(progress=progress, fivetran_urls=fivetran_urls, manual_input=manual_input, **data)
 
 
 class ConnectorManager:
@@ -258,10 +297,31 @@ class ConnectorManager:
         connector_type: str,
         github_url: Optional[str] = None,
         fivetran_urls: Optional[FivetranUrls] = None,
-        description: str = ""
+        description: str = "",
+        manual_text: Optional[str] = None,
+        manual_file_content: Optional[str] = None,
+        manual_file_type: Optional[str] = None
     ) -> Connector:
         """Create a new connector research project."""
         connector_id = self._generate_id(name)
+        
+        # Create manual input if provided
+        manual_input = None
+        if manual_text or manual_file_content:
+            # For PDF files, convert bytes to base64 string for storage
+            file_content_str = None
+            if manual_file_content:
+                if isinstance(manual_file_content, bytes):
+                    import base64
+                    file_content_str = base64.b64encode(manual_file_content).decode('utf-8')
+                else:
+                    file_content_str = manual_file_content
+            
+            manual_input = ManualInput(
+                text=manual_text,
+                file_content=file_content_str,
+                file_type=manual_file_type
+            )
         
         # Prepare connector data
         connector_data = {
@@ -272,6 +332,7 @@ class ConnectorManager:
             'github_url': github_url,
             'description': description,
             'fivetran_urls': fivetran_urls.to_dict() if fivetran_urls else None,
+            'manual_input': manual_input.to_dict() if manual_input else None,
             'objects_count': 0,
             'vectors_count': 0,
             'fivetran_parity': None,
@@ -320,6 +381,7 @@ class ConnectorManager:
                 connector_type=connector_type,
                 github_url=github_url,
                 fivetran_urls=fivetran_urls,
+                manual_input=manual_input,
                 description=description
             )
             

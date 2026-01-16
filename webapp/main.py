@@ -11,13 +11,14 @@ from pathlib import Path
 from typing import Optional, Dict, Any, List
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Request, HTTPException, BackgroundTasks
+from fastapi import FastAPI, Request, HTTPException, BackgroundTasks, File, UploadFile, Form
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
+import json
 
-from services.connector_manager import get_connector_manager, ConnectorManager, ConnectorStatus, FivetranUrls
+from services.connector_manager import get_connector_manager, ConnectorManager, ConnectorStatus, FivetranUrls, ManualInput
 from services.github_cloner import get_github_cloner, GitHubCloner
 from services.research_agent import get_research_agent, ResearchAgent
 from services.vector_manager import get_vector_manager, VectorManager
@@ -41,6 +42,7 @@ class ConnectorCreateRequest(BaseModel):
     github_url: Optional[str] = None
     fivetran_urls: Optional[FivetranUrlsRequest] = None
     description: str = ""
+    manual_text: Optional[str] = None  # Manual object list as text
 
 
 class ConnectorProgressResponse(BaseModel):
@@ -381,7 +383,68 @@ async def create_connector(request: ConnectorCreateRequest):
             connector_type=request.connector_type,
             github_url=request.github_url,
             fivetran_urls=fivetran_urls,
-            description=request.description
+            description=request.description,
+            manual_text=request.manual_text
+        )
+        return _connector_to_response(connector)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/connectors/upload", response_model=ConnectorResponse)
+async def create_connector_with_file(
+    name: str = Form(...),
+    connector_type: str = Form(...),
+    github_url: Optional[str] = Form(None),
+    fivetran_urls: Optional[str] = Form(None),  # JSON string
+    manual_text: Optional[str] = Form(None),
+    manual_file: Optional[UploadFile] = File(None)
+):
+    """Create a new connector research project with optional file upload."""
+    if not connector_manager:
+        raise HTTPException(status_code=503, detail="Connector Manager not initialized")
+    
+    try:
+        # Parse fivetran_urls from JSON string
+        fivetran_urls_obj = None
+        if fivetran_urls:
+            try:
+                urls_dict = json.loads(fivetran_urls)
+                fivetran_urls_obj = FivetranUrls(
+                    setup_guide_url=urls_dict.get('setup_guide_url'),
+                    connector_overview_url=urls_dict.get('connector_overview_url'),
+                    schema_info_url=urls_dict.get('schema_info_url')
+                )
+            except json.JSONDecodeError:
+                pass
+        
+        # Read file content if provided
+        manual_file_content = None
+        manual_file_type = None
+        if manual_file and manual_file.filename:
+            content = await manual_file.read()
+            filename_lower = manual_file.filename.lower()
+            
+            if filename_lower.endswith('.csv'):
+                manual_file_content = content.decode('utf-8')
+                manual_file_type = 'csv'
+            elif filename_lower.endswith('.pdf'):
+                manual_file_content = content  # Keep as bytes for PDF
+                manual_file_type = 'pdf'
+            else:
+                raise HTTPException(status_code=400, detail="Only CSV and PDF files are supported")
+        
+        connector = connector_manager.create_connector(
+            name=name,
+            connector_type=connector_type,
+            github_url=github_url,
+            fivetran_urls=fivetran_urls_obj,
+            description="",
+            manual_text=manual_text,
+            manual_file_content=manual_file_content,
+            manual_file_type=manual_file_type
         )
         return _connector_to_response(connector)
     except ValueError as e:
@@ -459,13 +522,37 @@ async def generate_research(connector_id: str, background_tasks: BackgroundTasks
                 else:
                     print(f"⚠ GitHub cloning skipped for {connector.name}, continuing with web search only")
             
-            # Crawl Fivetran documentation if URLs provided
-            if connector.fivetran_urls and connector.fivetran_urls.has_urls() and fivetran_crawler:
-                print(f"Crawling Fivetran documentation for {connector.name}...")
+            # Crawl Fivetran documentation if URLs provided, or use manual input
+            has_fivetran_urls = connector.fivetran_urls and connector.fivetran_urls.has_urls()
+            has_manual_input = connector.manual_input and connector.manual_input.has_input()
+            
+            if (has_fivetran_urls or has_manual_input) and fivetran_crawler:
+                print(f"Processing Fivetran/manual input for {connector.name}...")
+                
+                # Prepare manual input data
+                manual_csv = None
+                manual_pdf_bytes = None
+                manual_text = None
+                
+                if has_manual_input:
+                    mi = connector.manual_input
+                    if mi.text:
+                        manual_text = mi.text
+                    if mi.file_content and mi.file_type:
+                        if mi.file_type == 'csv':
+                            manual_csv = mi.file_content
+                        elif mi.file_type == 'pdf':
+                            # Decode from base64
+                            import base64
+                            manual_pdf_bytes = base64.b64decode(mi.file_content)
+                
                 fivetran_result = await fivetran_crawler.crawl_all(
-                    setup_url=connector.fivetran_urls.setup_guide_url,
-                    overview_url=connector.fivetran_urls.connector_overview_url,
-                    schema_url=connector.fivetran_urls.schema_info_url
+                    setup_url=connector.fivetran_urls.setup_guide_url if has_fivetran_urls else None,
+                    overview_url=connector.fivetran_urls.connector_overview_url if has_fivetran_urls else None,
+                    schema_url=connector.fivetran_urls.schema_info_url if has_fivetran_urls else None,
+                    manual_csv=manual_csv,
+                    manual_pdf_bytes=manual_pdf_bytes,
+                    manual_text=manual_text
                 )
                 fivetran_context = fivetran_result.to_dict()
             

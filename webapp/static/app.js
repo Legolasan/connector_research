@@ -30,7 +30,9 @@ function dashboard() {
                 connector_overview_url: '',
                 schema_info_url: ''
             },
-            description: ''
+            description: '',
+            manual_file: null,
+            manual_text: ''
         },
         connectorTypes: [
             { id: 'rest_api', label: 'REST' },
@@ -92,34 +94,49 @@ function dashboard() {
                     };
                 }
                 
-                const response = await fetch('/api/connectors', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        name: this.newConnector.name,
-                        connector_type: this.newConnector.type,
-                        github_url: this.newConnector.github_url || null,
-                        fivetran_urls: fivetranUrls,
-                        description: this.newConnector.description || ''
-                    })
-                });
+                // Use FormData if we have a file to upload
+                let response;
+                if (this.newConnector.manual_file) {
+                    const formData = new FormData();
+                    formData.append('name', this.newConnector.name);
+                    formData.append('connector_type', this.newConnector.type);
+                    if (this.newConnector.github_url) {
+                        formData.append('github_url', this.newConnector.github_url);
+                    }
+                    if (fivetranUrls) {
+                        formData.append('fivetran_urls', JSON.stringify(fivetranUrls));
+                    }
+                    if (this.newConnector.manual_text) {
+                        formData.append('manual_text', this.newConnector.manual_text);
+                    }
+                    formData.append('manual_file', this.newConnector.manual_file);
+                    
+                    response = await fetch('/api/connectors/upload', {
+                        method: 'POST',
+                        body: formData
+                    });
+                } else {
+                    // Regular JSON request
+                    response = await fetch('/api/connectors', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            name: this.newConnector.name,
+                            connector_type: this.newConnector.type,
+                            github_url: this.newConnector.github_url || null,
+                            fivetran_urls: fivetranUrls,
+                            description: this.newConnector.description || '',
+                            manual_text: this.newConnector.manual_text || null
+                        })
+                    });
+                }
                 
                 if (response.ok) {
                     const connector = await response.json();
                     this.connectors.push(connector);
                     this.showNewConnectorModal = false;
                     this.showFivetranInputs = false;
-                    this.newConnector = { 
-                        name: '', 
-                        type: 'rest_api', 
-                        github_url: '', 
-                        fivetran_urls: {
-                            setup_guide_url: '',
-                            connector_overview_url: '',
-                            schema_info_url: ''
-                        },
-                        description: '' 
-                    };
+                    this.resetNewConnector();
                     
                     // Optionally auto-start research
                     if (confirm('Connector created! Start research generation now?')) {
@@ -135,6 +152,47 @@ function dashboard() {
             } finally {
                 this.isCreatingConnector = false;
             }
+        },
+        
+        handleFileUpload(event) {
+            const file = event.target.files[0];
+            if (file) {
+                const allowedTypes = ['text/csv', 'application/pdf', 'application/vnd.ms-excel'];
+                const allowedExtensions = ['.csv', '.pdf'];
+                
+                const extension = file.name.toLowerCase().slice(file.name.lastIndexOf('.'));
+                if (!allowedExtensions.includes(extension)) {
+                    alert('Please upload a CSV or PDF file.');
+                    event.target.value = '';
+                    return;
+                }
+                
+                this.newConnector.manual_file = file;
+            }
+        },
+        
+        clearFileUpload() {
+            this.newConnector.manual_file = null;
+            // Reset any file input elements
+            const fileInputs = document.querySelectorAll('input[type="file"]');
+            fileInputs.forEach(input => input.value = '');
+        },
+        
+        resetNewConnector() {
+            this.newConnector = { 
+                name: '', 
+                type: 'rest_api', 
+                github_url: '', 
+                fivetran_urls: {
+                    setup_guide_url: '',
+                    connector_overview_url: '',
+                    schema_info_url: ''
+                },
+                description: '',
+                manual_file: null,
+                manual_text: ''
+            };
+            this.clearFileUpload();
         },
         
         async startResearch(connectorId) {

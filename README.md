@@ -5,11 +5,15 @@ A multi-connector research platform that auto-generates production-grade documen
 ## Features
 
 - **Multi-Connector Support**: Research any connector type (REST, GraphQL, SOAP, JDBC, SDK, Webhooks)
-- **Automated Research**: 18-section research documents generated via web search
+- **Automated Research**: 19-section research documents generated via web search
 - **GitHub Integration**: Clone and analyze existing SDKs for code patterns
-- **Per-Connector Indices**: Separate Pinecone vector index per connector
+- **Fivetran Parity Comparison**: Crawl Fivetran docs to compare object support and features
+- **Headless Browser Scraping**: Uses Playwright to crawl JS-rendered pages (like Fivetran docs)
+- **Manual Object Input**: Upload CSV/PDF or paste object lists for manual parity comparison
+- **Per-Connector Indices**: pgvector-based vector storage per connector
 - **RAG Chat**: Chat with your research documents
 - **Semantic Search**: Search across all connectors or within specific ones
+- **Quick Summary Dashboard**: Auto-generated stats comparing API capabilities, implementation, and Fivetran parity
 
 ## Architecture
 
@@ -57,6 +61,9 @@ cd connector_research
 python -m venv venv
 source venv/bin/activate  # On Windows: venv\Scripts\activate
 pip install -r requirements.txt
+
+# Install Playwright browsers (for Fivetran doc crawling)
+playwright install chromium
 ```
 
 ### 3. Set Up Environment Variables
@@ -139,14 +146,14 @@ The `Procfile` is configured for Railway deployment.
 ## Environment Variables
 
 ```env
-# OpenAI
+# OpenAI (required)
 OPENAI_API_KEY=sk-xxx
 
-# Pinecone
-PINECONE_API_KEY=xxx
-
-# Tavily (Web Search)
+# Tavily (Web Search - required)
 TAVILY_API_KEY=xxx
+
+# PostgreSQL (required for persistent storage)
+DATABASE_URL=postgresql://user:password@host:5432/dbname
 
 # Optional
 RESEARCH_MODEL=gpt-4o

@@ -1,13 +1,34 @@
 """
 Fivetran Crawler Service
 Crawls and parses Fivetran documentation pages for parity comparison.
+Supports headless browser for JS-rendered pages and manual CSV/PDF input.
 """
 
 import re
+import os
+import csv
+import io
 import httpx
+import asyncio
 from typing import List, Dict, Any, Optional, Tuple
 from dataclasses import dataclass, field
 from datetime import datetime
+from pathlib import Path
+
+# Try to import optional dependencies
+try:
+    from playwright.async_api import async_playwright
+    PLAYWRIGHT_AVAILABLE = True
+except ImportError:
+    PLAYWRIGHT_AVAILABLE = False
+    print("⚠ Playwright not available. Install with: pip install playwright && playwright install chromium")
+
+try:
+    from pypdf import PdfReader
+    PYPDF_AVAILABLE = True
+except ImportError:
+    PYPDF_AVAILABLE = False
+    print("⚠ PyPDF not available. Install with: pip install pypdf")
 
 
 @dataclass
@@ -160,7 +181,13 @@ class FivetranContext:
 
 
 class FivetranCrawler:
-    """Crawls and parses Fivetran documentation pages."""
+    """Crawls and parses Fivetran documentation pages.
+    
+    Supports multiple crawling methods:
+    - Simple HTTP (fast, but doesn't work for JS-rendered pages)
+    - Headless browser via Playwright (slower, but handles JS-rendered content)
+    - Manual input via CSV or PDF files
+    """
     
     # Feature keywords to look for in overview
     FEATURE_KEYWORDS = [
@@ -176,12 +203,88 @@ class FivetranCrawler:
         'basic auth', 'certificate', 'ssh', 'jwt'
     ]
     
-    def __init__(self):
-        """Initialize the crawler."""
+    def __init__(self, use_headless: bool = True):
+        """Initialize the crawler.
+        
+        Args:
+            use_headless: Whether to use headless browser for JS-rendered pages
+        """
         self.timeout = 30.0
+        self.use_headless = use_headless and PLAYWRIGHT_AVAILABLE
+        self._browser = None
+        self._playwright = None
     
-    async def crawl_page(self, url: str) -> str:
-        """Crawl a single page and return its text content.
+    async def _init_browser(self):
+        """Initialize the headless browser if not already initialized."""
+        if not PLAYWRIGHT_AVAILABLE:
+            return False
+        
+        if self._playwright is None:
+            try:
+                self._playwright = await async_playwright().start()
+                self._browser = await self._playwright.chromium.launch(headless=True)
+                print("✓ Headless browser initialized")
+                return True
+            except Exception as e:
+                print(f"⚠ Could not initialize headless browser: {e}")
+                self._playwright = None
+                self._browser = None
+                return False
+        return True
+    
+    async def _close_browser(self):
+        """Close the headless browser."""
+        if self._browser:
+            await self._browser.close()
+            self._browser = None
+        if self._playwright:
+            await self._playwright.stop()
+            self._playwright = None
+    
+    async def crawl_page_headless(self, url: str, wait_selector: str = None) -> str:
+        """Crawl a page using headless browser for JS-rendered content.
+        
+        Args:
+            url: URL to crawl
+            wait_selector: Optional CSS selector to wait for before extracting content
+            
+        Returns:
+            Extracted text content from the page
+        """
+        if not url:
+            return ""
+        
+        if not await self._init_browser():
+            print("  - Falling back to simple HTTP crawling")
+            return await self.crawl_page_simple(url)
+        
+        try:
+            page = await self._browser.new_page()
+            await page.goto(url, wait_until='networkidle', timeout=60000)
+            
+            # Wait for content to load
+            if wait_selector:
+                try:
+                    await page.wait_for_selector(wait_selector, timeout=10000)
+                except:
+                    pass  # Continue even if selector not found
+            
+            # Wait a bit more for any lazy-loaded content
+            await asyncio.sleep(2)
+            
+            # Get the full page content
+            html_content = await page.content()
+            await page.close()
+            
+            return self._html_to_text(html_content)
+            
+        except Exception as e:
+            print(f"Error crawling {url} with headless browser: {e}")
+            # Fallback to simple HTTP
+            return await self.crawl_page_simple(url)
+    
+    async def crawl_page_simple(self, url: str) -> str:
+        """Crawl a page using simple HTTP request (no JS execution).
         
         Args:
             url: URL to crawl
@@ -195,7 +298,7 @@ class FivetranCrawler:
         try:
             async with httpx.AsyncClient(timeout=self.timeout, follow_redirects=True) as client:
                 response = await client.get(url, headers={
-                    'User-Agent': 'Mozilla/5.0 (compatible; ConnectorResearchBot/1.0)'
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
                 })
                 response.raise_for_status()
                 
@@ -205,6 +308,186 @@ class FivetranCrawler:
         except Exception as e:
             print(f"Error crawling {url}: {e}")
             return ""
+    
+    async def crawl_page(self, url: str) -> str:
+        """Crawl a single page and return its text content.
+        
+        Automatically chooses between headless browser and simple HTTP.
+        Uses headless browser for Fivetran docs (which are JS-rendered).
+        
+        Args:
+            url: URL to crawl
+            
+        Returns:
+            Extracted text content from the page
+        """
+        if not url:
+            return ""
+        
+        # Use headless browser for Fivetran docs (they're JS-rendered)
+        if self.use_headless and 'fivetran.com' in url:
+            print(f"  - Using headless browser for JS-rendered page")
+            return await self.crawl_page_headless(url, wait_selector='article, .content, main')
+        else:
+            return await self.crawl_page_simple(url)
+    
+    def parse_csv_objects(self, csv_content: str) -> FivetranSchemaContext:
+        """Parse objects from CSV content.
+        
+        Expected CSV format:
+        object_name,sync_mode,parent,primary_key,cursor_field,permissions,delete_method
+        
+        Args:
+            csv_content: CSV content as string
+            
+        Returns:
+            FivetranSchemaContext with parsed objects
+        """
+        context = FivetranSchemaContext()
+        
+        try:
+            reader = csv.DictReader(io.StringIO(csv_content))
+            
+            for row in reader:
+                name = row.get('object_name', row.get('name', row.get('table', ''))).strip()
+                if not name:
+                    continue
+                
+                obj = FivetranSchemaObject(
+                    name=name.lower(),
+                    sync_mode=row.get('sync_mode', 'incremental').lower(),
+                    parent=row.get('parent', '').strip() or None,
+                    primary_key=row.get('primary_key', 'id').strip(),
+                    cursor_field=row.get('cursor_field', 'updated_at').strip(),
+                    delete_method=row.get('delete_method', 'None').strip(),
+                    is_supported=True
+                )
+                
+                # Parse permissions (comma-separated)
+                perms = row.get('permissions', '').strip()
+                if perms:
+                    obj.permissions = [p.strip() for p in perms.split(',')]
+                
+                context.objects.append(obj)
+                context.supported_objects.append(obj.name)
+                
+                # Track parent-child relationships
+                if obj.parent:
+                    context.parent_child_relationships.append((obj.parent.lower(), obj.name))
+            
+            print(f"✓ Parsed {len(context.objects)} objects from CSV")
+            
+        except Exception as e:
+            print(f"Error parsing CSV: {e}")
+        
+        return context
+    
+    def parse_pdf_objects(self, pdf_path: str) -> FivetranSchemaContext:
+        """Parse objects from a PDF file.
+        
+        Args:
+            pdf_path: Path to PDF file
+            
+        Returns:
+            FivetranSchemaContext with parsed objects
+        """
+        context = FivetranSchemaContext()
+        
+        if not PYPDF_AVAILABLE:
+            print("⚠ PyPDF not available. Cannot parse PDF files.")
+            return context
+        
+        try:
+            reader = PdfReader(pdf_path)
+            
+            # Extract text from all pages
+            full_text = ""
+            for page in reader.pages:
+                full_text += page.extract_text() + "\n"
+            
+            # Use the existing schema parser
+            context = self.parse_schema_info(full_text)
+            context.raw_content = full_text[:5000]
+            
+            print(f"✓ Parsed {len(context.objects)} objects from PDF")
+            
+        except Exception as e:
+            print(f"Error parsing PDF: {e}")
+        
+        return context
+    
+    def parse_pdf_bytes(self, pdf_bytes: bytes) -> FivetranSchemaContext:
+        """Parse objects from PDF bytes (for file uploads).
+        
+        Args:
+            pdf_bytes: PDF file content as bytes
+            
+        Returns:
+            FivetranSchemaContext with parsed objects
+        """
+        context = FivetranSchemaContext()
+        
+        if not PYPDF_AVAILABLE:
+            print("⚠ PyPDF not available. Cannot parse PDF files.")
+            return context
+        
+        try:
+            reader = PdfReader(io.BytesIO(pdf_bytes))
+            
+            # Extract text from all pages
+            full_text = ""
+            for page in reader.pages:
+                full_text += page.extract_text() + "\n"
+            
+            # Use the existing schema parser
+            context = self.parse_schema_info(full_text)
+            context.raw_content = full_text[:5000]
+            
+            print(f"✓ Parsed {len(context.objects)} objects from PDF")
+            
+        except Exception as e:
+            print(f"Error parsing PDF: {e}")
+        
+        return context
+    
+    def parse_text_objects(self, text_content: str) -> FivetranSchemaContext:
+        """Parse objects from plain text (one object per line or comma-separated).
+        
+        Args:
+            text_content: Plain text with object names
+            
+        Returns:
+            FivetranSchemaContext with parsed objects
+        """
+        context = FivetranSchemaContext()
+        
+        # Split by newlines or commas
+        lines = text_content.replace(',', '\n').split('\n')
+        
+        for line in lines:
+            name = line.strip().lower()
+            if not name or len(name) < 2:
+                continue
+            
+            # Skip common non-object words
+            if name in {'name', 'table', 'object', 'entity', 'column', 'field'}:
+                continue
+            
+            obj = FivetranSchemaObject(
+                name=name,
+                sync_mode='incremental',
+                primary_key='id',
+                cursor_field='updated_at',
+                delete_method='None',
+                is_supported=True
+            )
+            
+            context.objects.append(obj)
+            context.supported_objects.append(name)
+        
+        print(f"✓ Parsed {len(context.objects)} objects from text")
+        
+        return context
     
     def _html_to_text(self, html_content: str) -> str:
         """Convert HTML to plain text.
@@ -576,39 +859,102 @@ class FivetranCrawler:
         
         return ""
     
-    async def crawl_all(self, setup_url: str = None, overview_url: str = None, schema_url: str = None) -> FivetranContext:
-        """Crawl all provided Fivetran documentation pages.
+    async def crawl_all(
+        self, 
+        setup_url: str = None, 
+        overview_url: str = None, 
+        schema_url: str = None,
+        manual_csv: str = None,
+        manual_pdf_bytes: bytes = None,
+        manual_text: str = None
+    ) -> FivetranContext:
+        """Crawl all provided Fivetran documentation pages or use manual input.
         
         Args:
             setup_url: Setup Guide URL
             overview_url: Connector Overview URL
             schema_url: Schema Information URL
+            manual_csv: CSV content with object definitions
+            manual_pdf_bytes: PDF file content as bytes
+            manual_text: Plain text with object names
             
         Returns:
             FivetranContext with all extracted data
         """
         context = FivetranContext()
         
-        # Crawl Setup Guide
-        if setup_url:
-            print(f"  - Crawling Fivetran Setup Guide: {setup_url}")
-            setup_content = await self.crawl_page(setup_url)
-            if setup_content:
-                context.setup = self.parse_setup_guide(setup_content)
+        try:
+            # Crawl Setup Guide
+            if setup_url:
+                print(f"  - Crawling Fivetran Setup Guide: {setup_url}")
+                setup_content = await self.crawl_page(setup_url)
+                if setup_content:
+                    context.setup = self.parse_setup_guide(setup_content)
+            
+            # Crawl Connector Overview
+            if overview_url:
+                print(f"  - Crawling Fivetran Connector Overview: {overview_url}")
+                overview_content = await self.crawl_page(overview_url)
+                if overview_content:
+                    context.overview = self.parse_connector_overview(overview_content)
+            
+            # Crawl Schema Information
+            if schema_url:
+                print(f"  - Crawling Fivetran Schema Information: {schema_url}")
+                schema_content = await self.crawl_page(schema_url)
+                if schema_content:
+                    context.schema = self.parse_schema_info(schema_content)
+            
+            # Process manual input (takes priority over crawled schema if provided)
+            if manual_csv:
+                print("  - Parsing manual CSV input")
+                manual_schema = self.parse_csv_objects(manual_csv)
+                if manual_schema.objects:
+                    # Merge with existing schema or replace
+                    if context.schema:
+                        # Merge objects from manual input
+                        existing_names = {obj.name for obj in context.schema.objects}
+                        for obj in manual_schema.objects:
+                            if obj.name not in existing_names:
+                                context.schema.objects.append(obj)
+                                context.schema.supported_objects.append(obj.name)
+                        context.schema.parent_child_relationships.extend(manual_schema.parent_child_relationships)
+                    else:
+                        context.schema = manual_schema
+            
+            if manual_pdf_bytes:
+                print("  - Parsing manual PDF input")
+                manual_schema = self.parse_pdf_bytes(manual_pdf_bytes)
+                if manual_schema.objects:
+                    if context.schema:
+                        existing_names = {obj.name for obj in context.schema.objects}
+                        for obj in manual_schema.objects:
+                            if obj.name not in existing_names:
+                                context.schema.objects.append(obj)
+                                context.schema.supported_objects.append(obj.name)
+                    else:
+                        context.schema = manual_schema
+            
+            if manual_text:
+                print("  - Parsing manual text input")
+                manual_schema = self.parse_text_objects(manual_text)
+                if manual_schema.objects:
+                    if context.schema:
+                        existing_names = {obj.name for obj in context.schema.objects}
+                        for obj in manual_schema.objects:
+                            if obj.name not in existing_names:
+                                context.schema.objects.append(obj)
+                                context.schema.supported_objects.append(obj.name)
+                    else:
+                        context.schema = manual_schema
+            
+        finally:
+            # Close the browser if we used it
+            await self._close_browser()
         
-        # Crawl Connector Overview
-        if overview_url:
-            print(f"  - Crawling Fivetran Connector Overview: {overview_url}")
-            overview_content = await self.crawl_page(overview_url)
-            if overview_content:
-                context.overview = self.parse_connector_overview(overview_content)
-        
-        # Crawl Schema Information
-        if schema_url:
-            print(f"  - Crawling Fivetran Schema Information: {schema_url}")
-            schema_content = await self.crawl_page(schema_url)
-            if schema_content:
-                context.schema = self.parse_schema_info(schema_content)
+        # Log summary
+        obj_count = len(context.schema.objects) if context.schema else 0
+        print(f"  ✓ Fivetran crawl complete: {obj_count} objects found")
         
         return context
 
@@ -617,9 +963,24 @@ class FivetranCrawler:
 _crawler: Optional[FivetranCrawler] = None
 
 
-def get_fivetran_crawler() -> FivetranCrawler:
-    """Get the singleton FivetranCrawler instance."""
+def get_fivetran_crawler(use_headless: bool = True) -> FivetranCrawler:
+    """Get the singleton FivetranCrawler instance.
+    
+    Args:
+        use_headless: Whether to use headless browser for JS-rendered pages
+        
+    Returns:
+        FivetranCrawler instance
+    """
     global _crawler
     if _crawler is None:
-        _crawler = FivetranCrawler()
+        _crawler = FivetranCrawler(use_headless=use_headless)
     return _crawler
+
+
+async def cleanup_crawler():
+    """Cleanup the crawler and close browser."""
+    global _crawler
+    if _crawler:
+        await _crawler._close_browser()
+        _crawler = None
