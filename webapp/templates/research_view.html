@@ -1,85 +1,304 @@
 {% extends "base.html" %}
 
 {% block content %}
-<div class="flex min-h-screen">
+<div x-data="researchViewer()" x-init="init()" class="min-h-screen">
     
-    <!-- Sidebar - Table of Contents -->
-    <aside class="w-72 bg-black/30 backdrop-blur-xl border-r border-white/5 flex flex-col fixed h-full overflow-hidden">
+    <!-- Landing Page View -->
+    <div x-show="currentView === 'landing'" x-cloak class="max-w-7xl mx-auto px-6 py-8">
+        
         <!-- Header -->
-        <div class="p-6 border-b border-white/5">
-            <a href="/" class="flex items-center gap-2 text-gray-400 hover:text-white transition-colors mb-4">
-                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path>
-                </svg>
-                <span class="text-sm">Back to Dashboard</span>
-            </a>
+        <div class="flex items-center justify-between mb-8">
+            <div class="flex items-center gap-4">
+                <a href="/" class="flex items-center gap-2 text-gray-400 hover:text-white transition-colors">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path>
+                    </svg>
+                </a>
+                <div class="flex items-center gap-3">
+                    <div class="w-14 h-14 rounded-2xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-2xl font-bold text-white shadow-lg shadow-indigo-500/30">
+                        {{ connector.name[:2].upper() }}
+                    </div>
+                    <div>
+                        <h1 class="text-2xl font-bold text-white">{{ connector.name }}</h1>
+                        <p class="text-gray-400 text-sm">Connector Research Document</p>
+                    </div>
+                </div>
+            </div>
             
             <div class="flex items-center gap-3">
-                <div class="w-12 h-12 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-xl font-bold text-white">
-                    {{ connector.name[:2].upper() }}
-                </div>
-                <div>
-                    <h1 class="text-lg font-bold text-white">{{ connector.name }}</h1>
-                    <span class="px-2 py-0.5 text-xs rounded-lg border"
-                          style="{% if connector.status == 'complete' %}background: rgba(34, 197, 94, 0.2); color: #4ade80; border-color: rgba(34, 197, 94, 0.3);{% else %}background: rgba(156, 163, 175, 0.2); color: #9ca3af; border-color: rgba(156, 163, 175, 0.3);{% endif %}">
-                        {{ connector.status }}
-                    </span>
-                </div>
+                <a href="/api/connectors/{{ connector.id }}/download" 
+                   class="flex items-center gap-2 px-4 py-2 bg-white/5 hover:bg-white/10 rounded-xl font-medium transition-colors text-sm text-gray-300 border border-white/10">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path>
+                    </svg>
+                    Download
+                </a>
+                <button @click="currentView = 'document'" 
+                        class="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 rounded-xl font-medium transition-colors text-sm">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+                    </svg>
+                    Full Document
+                </button>
             </div>
         </div>
         
-        <!-- Table of Contents -->
-        <div class="flex-1 overflow-y-auto p-4">
-            <h3 class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">Table of Contents</h3>
-            <nav class="space-y-1">
-                {% for item in toc_items %}
-                <a href="#{{ item.anchor }}" 
-                   class="block text-sm py-1.5 px-3 rounded-lg transition-colors
-                          {% if item.level == 1 %}text-white font-medium hover:bg-white/10{% elif item.level == 2 %}text-gray-300 pl-6 hover:bg-white/5{% else %}text-gray-400 pl-9 text-xs hover:bg-white/5{% endif %}">
-                    {{ item.title | truncate(35) }}
-                </a>
-                {% endfor %}
-            </nav>
-        </div>
-        
-        <!-- Actions -->
-        <div class="p-4 border-t border-white/5 space-y-2">
-            <a href="/api/connectors/{{ connector.id }}/download" 
-               class="flex items-center justify-center gap-2 w-full px-4 py-2 bg-indigo-600 hover:bg-indigo-500 rounded-xl font-medium transition-colors text-sm">
-                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path>
-                </svg>
-                Download Markdown
-            </a>
-            <button onclick="window.print()" 
-                    class="flex items-center justify-center gap-2 w-full px-4 py-2 bg-white/5 hover:bg-white/10 rounded-xl font-medium transition-colors text-sm text-gray-300">
-                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"></path>
-                </svg>
-                Print
-            </button>
-        </div>
-    </aside>
-    
-    <!-- Main Content -->
-    <main class="flex-1 ml-72">
-        <article class="max-w-4xl mx-auto px-8 py-12">
-            <!-- Research Content -->
-            <div class="prose prose-invert prose-lg max-w-none research-content">
-                {{ content | safe }}
+        <!-- Quick Summary Dashboard -->
+        <div class="bg-gradient-to-br from-indigo-900/30 to-purple-900/30 border border-indigo-500/20 rounded-3xl p-8 mb-8">
+            <div class="flex items-center gap-3 mb-6">
+                <div class="w-10 h-10 rounded-xl bg-indigo-500/20 flex items-center justify-center">
+                    <svg class="w-5 h-5 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path>
+                    </svg>
+                </div>
+                <h2 class="text-xl font-bold text-white">Quick Summary Dashboard</h2>
             </div>
             
-            <!-- Footer -->
-            <div class="mt-16 pt-8 border-t border-white/10 text-center text-gray-500 text-sm">
-                <p>Generated by Connector Research Platform</p>
-                <p class="mt-1">Last updated: {{ connector.updated_at[:10] if connector.updated_at else 'N/A' }}</p>
+            <!-- Metrics Grid -->
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                <div class="bg-black/30 rounded-2xl p-5 border border-white/5">
+                    <div class="text-3xl font-bold text-white mb-1" x-text="metrics.totalObjects">--</div>
+                    <div class="text-sm text-gray-400">Total Objects</div>
+                </div>
+                <div class="bg-black/30 rounded-2xl p-5 border border-white/5">
+                    <div class="text-3xl font-bold text-emerald-400 mb-1" x-text="metrics.incrementalObjects">--</div>
+                    <div class="text-sm text-gray-400">Incremental Sync</div>
+                </div>
+                <div class="bg-black/30 rounded-2xl p-5 border border-white/5">
+                    <div class="text-3xl font-bold text-amber-400 mb-1" x-text="metrics.fullLoadObjects">--</div>
+                    <div class="text-sm text-gray-400">Full Load Only</div>
+                </div>
+                <div class="bg-black/30 rounded-2xl p-5 border border-white/5">
+                    <div class="text-3xl font-bold text-purple-400 mb-1" x-text="discoveredMethods.length">--</div>
+                    <div class="text-sm text-gray-400">Extraction Methods</div>
+                </div>
             </div>
-        </article>
-    </main>
+            
+            <!-- Auth & SDK Summary -->
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div class="bg-black/20 rounded-xl p-4 border border-white/5">
+                    <div class="text-xs text-gray-500 uppercase tracking-wider mb-2">Authentication Types</div>
+                    <div class="flex flex-wrap gap-2">
+                        <template x-for="auth in metrics.authTypes" :key="auth">
+                            <span class="px-3 py-1 bg-indigo-500/20 text-indigo-300 text-sm rounded-lg" x-text="auth"></span>
+                        </template>
+                        <span x-show="metrics.authTypes.length === 0" class="text-gray-500 text-sm">See method details</span>
+                    </div>
+                </div>
+                <div class="bg-black/20 rounded-xl p-4 border border-white/5">
+                    <div class="text-xs text-gray-500 uppercase tracking-wider mb-2">SDK Availability</div>
+                    <div class="flex flex-wrap gap-2">
+                        <template x-for="sdk in metrics.sdkInfo" :key="sdk">
+                            <span class="px-3 py-1 bg-purple-500/20 text-purple-300 text-sm rounded-lg" x-text="sdk"></span>
+                        </template>
+                        <span x-show="metrics.sdkInfo.length === 0" class="text-gray-500 text-sm">See method details</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Extraction Methods Grid -->
+        <div class="mb-8">
+            <h2 class="text-xl font-bold text-white mb-4 flex items-center gap-2">
+                <svg class="w-5 h-5 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"></path>
+                </svg>
+                Extraction Methods
+                <span class="text-sm font-normal text-gray-400">(click to explore)</span>
+            </h2>
+            
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                <template x-for="(method, index) in discoveredMethods" :key="method">
+                    <button @click="selectMethod(method)" 
+                            class="group relative bg-gradient-to-br from-gray-800/50 to-gray-900/50 hover:from-indigo-900/30 hover:to-purple-900/30 border border-white/10 hover:border-indigo-500/30 rounded-2xl p-6 text-left transition-all duration-300 transform hover:scale-[1.02]">
+                        
+                        <!-- Method Icon -->
+                        <div class="w-12 h-12 rounded-xl mb-4 flex items-center justify-center"
+                             :class="getMethodColor(method)">
+                            <span x-html="getMethodIcon(method)"></span>
+                        </div>
+                        
+                        <h3 class="text-lg font-semibold text-white mb-1" x-text="method"></h3>
+                        <p class="text-sm text-gray-400" x-text="getMethodDescription(method)"></p>
+                        
+                        <!-- Arrow indicator -->
+                        <div class="absolute right-4 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <svg class="w-5 h-5 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
+                            </svg>
+                        </div>
+                    </button>
+                </template>
+            </div>
+        </div>
+        
+        <!-- Quick Links -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <button @click="scrollToSection('platform-overview')" class="bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl p-4 text-left transition-colors">
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 rounded-lg bg-blue-500/20 flex items-center justify-center">
+                        <svg class="w-5 h-5 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                        </svg>
+                    </div>
+                    <div>
+                        <div class="font-medium text-white">Platform Overview</div>
+                        <div class="text-sm text-gray-400">What the platform does</div>
+                    </div>
+                </div>
+            </button>
+            
+            <button @click="scrollToSection('authentication-comparison')" class="bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl p-4 text-left transition-colors">
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 rounded-lg bg-green-500/20 flex items-center justify-center">
+                        <svg class="w-5 h-5 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"></path>
+                        </svg>
+                    </div>
+                    <div>
+                        <div class="font-medium text-white">Authentication</div>
+                        <div class="text-sm text-gray-400">Auth methods comparison</div>
+                    </div>
+                </div>
+            </button>
+            
+            <button @click="scrollToSection('object-catalog--replication-guide')" class="bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl p-4 text-left transition-colors">
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 rounded-lg bg-amber-500/20 flex items-center justify-center">
+                        <svg class="w-5 h-5 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4"></path>
+                        </svg>
+                    </div>
+                    <div>
+                        <div class="font-medium text-white">Object Catalog</div>
+                        <div class="text-sm text-gray-400">Full object reference</div>
+                    </div>
+                </div>
+            </button>
+        </div>
+    </div>
+    
+    <!-- Tabbed Method View -->
+    <div x-show="currentView === 'methods'" x-cloak class="min-h-screen">
+        <!-- Fixed Header with Tabs -->
+        <div class="sticky top-0 z-50 bg-gray-900/95 backdrop-blur-xl border-b border-white/10">
+            <div class="max-w-7xl mx-auto px-6">
+                <!-- Back and Title -->
+                <div class="flex items-center justify-between py-4">
+                    <div class="flex items-center gap-4">
+                        <button @click="currentView = 'landing'" class="text-gray-400 hover:text-white transition-colors">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path>
+                            </svg>
+                        </button>
+                        <h1 class="text-xl font-bold text-white">{{ connector.name }} - Extraction Methods</h1>
+                    </div>
+                </div>
+                
+                <!-- Method Tabs -->
+                <div class="flex gap-1 overflow-x-auto pb-0 -mb-px">
+                    <template x-for="method in discoveredMethods" :key="method">
+                        <button @click="activeTab = method"
+                                :class="activeTab === method ? 'bg-indigo-500/20 border-indigo-500 text-white' : 'border-transparent text-gray-400 hover:text-white hover:bg-white/5'"
+                                class="px-5 py-3 text-sm font-medium whitespace-nowrap border-b-2 transition-all rounded-t-lg">
+                            <span x-text="method"></span>
+                        </button>
+                    </template>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Tab Content -->
+        <div class="max-w-7xl mx-auto px-6 py-8">
+            <template x-for="method in discoveredMethods" :key="method">
+                <div x-show="activeTab === method" class="method-content">
+                    <!-- Method content will be rendered from parsed sections -->
+                    <div x-html="getMethodContent(method)"></div>
+                </div>
+            </template>
+        </div>
+    </div>
+    
+    <!-- Full Document View -->
+    <div x-show="currentView === 'document'" x-cloak class="flex min-h-screen">
+        
+        <!-- Sidebar - Table of Contents -->
+        <aside class="w-72 bg-black/30 backdrop-blur-xl border-r border-white/5 flex flex-col fixed h-full overflow-hidden">
+            <!-- Header -->
+            <div class="p-6 border-b border-white/5">
+                <button @click="currentView = 'landing'" class="flex items-center gap-2 text-gray-400 hover:text-white transition-colors mb-4">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path>
+                    </svg>
+                    <span class="text-sm">Back to Summary</span>
+                </button>
+                
+                <div class="flex items-center gap-3">
+                    <div class="w-12 h-12 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-xl font-bold text-white">
+                        {{ connector.name[:2].upper() }}
+                    </div>
+                    <div>
+                        <h1 class="text-lg font-bold text-white">{{ connector.name }}</h1>
+                        <span class="px-2 py-0.5 text-xs rounded-lg border bg-emerald-500/20 text-emerald-400 border-emerald-500/30">
+                            {{ connector.status }}
+                        </span>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Table of Contents -->
+            <div class="flex-1 overflow-y-auto p-4">
+                <h3 class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">Table of Contents</h3>
+                <nav class="space-y-1">
+                    {% for item in toc_items %}
+                    <a href="#{{ item.anchor }}" 
+                       class="block text-sm py-1.5 px-3 rounded-lg transition-colors
+                              {% if item.level == 1 %}text-white font-medium hover:bg-white/10{% elif item.level == 2 %}text-gray-300 pl-6 hover:bg-white/5{% else %}text-gray-400 pl-9 text-xs hover:bg-white/5{% endif %}">
+                        {{ item.title | truncate(35) }}
+                    </a>
+                    {% endfor %}
+                </nav>
+            </div>
+            
+            <!-- Actions -->
+            <div class="p-4 border-t border-white/5 space-y-2">
+                <a href="/api/connectors/{{ connector.id }}/download" 
+                   class="flex items-center justify-center gap-2 w-full px-4 py-2 bg-indigo-600 hover:bg-indigo-500 rounded-xl font-medium transition-colors text-sm">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path>
+                    </svg>
+                    Download Markdown
+                </a>
+                <button onclick="window.print()" 
+                        class="flex items-center justify-center gap-2 w-full px-4 py-2 bg-white/5 hover:bg-white/10 rounded-xl font-medium transition-colors text-sm text-gray-300">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"></path>
+                    </svg>
+                    Print
+                </button>
+            </div>
+        </aside>
+        
+        <!-- Main Content -->
+        <main class="flex-1 ml-72">
+            <article class="max-w-4xl mx-auto px-8 py-12">
+                <div class="prose prose-invert prose-lg max-w-none research-content">
+                    {{ content | safe }}
+                </div>
+                
+                <div class="mt-16 pt-8 border-t border-white/10 text-center text-gray-500 text-sm">
+                    <p>Generated by Connector Research Platform</p>
+                    <p class="mt-1">Last updated: {{ connector.updated_at[:10] if connector.updated_at else 'N/A' }}</p>
+                </div>
+            </article>
+        </main>
+    </div>
 </div>
 
 <style>
-    /* Enhanced prose styling for research documents */
+    [x-cloak] { display: none !important; }
+    
+    /* Enhanced prose styling */
     .research-content h1 {
         font-size: 2.25rem;
         font-weight: 800;
@@ -90,9 +309,7 @@
         color: #fff;
     }
     
-    .research-content h1:first-child {
-        margin-top: 0;
-    }
+    .research-content h1:first-child { margin-top: 0; }
     
     .research-content h2 {
         font-size: 1.5rem;
@@ -100,7 +317,7 @@
         margin-top: 2.5rem;
         margin-bottom: 1rem;
         color: #e0e7ff;
-        scroll-margin-top: 2rem;
+        scroll-margin-top: 6rem;
     }
     
     .research-content h3 {
@@ -136,9 +353,7 @@
         text-underline-offset: 2px;
     }
     
-    .research-content a:hover {
-        color: #a5b4fc;
-    }
+    .research-content a:hover { color: #a5b4fc; }
     
     .research-content code {
         background: rgba(99, 102, 241, 0.15);
@@ -165,24 +380,28 @@
         color: #e5e7eb;
     }
     
+    /* Table styling for object tables */
     .research-content table {
         width: 100%;
         border-collapse: collapse;
         margin-top: 1.5rem;
         margin-bottom: 1.5rem;
-        font-size: 0.9rem;
+        font-size: 0.85rem;
     }
     
     .research-content thead {
         background: rgba(99, 102, 241, 0.15);
+        position: sticky;
+        top: 0;
     }
     
     .research-content th {
-        padding: 0.75rem 1rem;
+        padding: 0.875rem 1rem;
         text-align: left;
         font-weight: 600;
         color: #e0e7ff;
         border-bottom: 2px solid rgba(99, 102, 241, 0.3);
+        white-space: nowrap;
     }
     
     .research-content td {
@@ -192,7 +411,7 @@
     }
     
     .research-content tbody tr:hover {
-        background: rgba(255, 255, 255, 0.02);
+        background: rgba(99, 102, 241, 0.05);
     }
     
     .research-content blockquote {
@@ -211,77 +430,331 @@
         margin: 2.5rem 0;
     }
     
-    .research-content strong {
+    .research-content strong { color: #fff; font-weight: 600; }
+    
+    /* Method content styling */
+    .method-content h2 {
+        font-size: 1.75rem;
+        font-weight: 700;
+        margin-top: 0;
+        margin-bottom: 1.5rem;
         color: #fff;
+        padding-bottom: 0.75rem;
+        border-bottom: 2px solid rgba(99, 102, 241, 0.3);
+    }
+    
+    .method-content h3 {
+        font-size: 1.25rem;
         font-weight: 600;
+        margin-top: 2rem;
+        margin-bottom: 1rem;
+        color: #e0e7ff;
+    }
+    
+    .method-content table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 1rem;
+        margin-bottom: 1.5rem;
+        font-size: 0.85rem;
+        background: rgba(0, 0, 0, 0.2);
+        border-radius: 0.75rem;
+        overflow: hidden;
+    }
+    
+    .method-content thead {
+        background: rgba(99, 102, 241, 0.15);
+    }
+    
+    .method-content th {
+        padding: 0.875rem 1rem;
+        text-align: left;
+        font-weight: 600;
+        color: #e0e7ff;
+        border-bottom: 2px solid rgba(99, 102, 241, 0.3);
+    }
+    
+    .method-content td {
+        padding: 0.75rem 1rem;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+        color: #d1d5db;
+    }
+    
+    .method-content tbody tr:hover {
+        background: rgba(99, 102, 241, 0.05);
+    }
+    
+    .method-content pre {
+        background: rgba(0, 0, 0, 0.5);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 0.75rem;
+        padding: 1.25rem;
+        overflow-x: auto;
+        margin-top: 1rem;
+        margin-bottom: 1.5rem;
+    }
+    
+    .method-content code {
+        font-family: 'JetBrains Mono', 'Fira Code', monospace;
+        font-size: 0.875rem;
+        color: #e5e7eb;
+    }
+    
+    .method-content p {
+        color: #d1d5db;
+        line-height: 1.7;
+        margin-bottom: 1rem;
     }
     
     /* Smooth scrolling */
-    html {
-        scroll-behavior: smooth;
-    }
+    html { scroll-behavior: smooth; }
     
     /* Print styles */
     @media print {
-        aside {
-            display: none !important;
-        }
-        main {
-            margin-left: 0 !important;
-        }
-        .research-content {
-            color: #000 !important;
-        }
-        .research-content h1, 
-        .research-content h2, 
-        .research-content h3,
-        .research-content p,
-        .research-content li,
-        .research-content td {
-            color: #000 !important;
-        }
-        body {
-            background: #fff !important;
-        }
-    }
-    
-    /* Add IDs to headings for anchor links */
-    .research-content h1,
-    .research-content h2,
-    .research-content h3 {
-        position: relative;
+        aside { display: none !important; }
+        main { margin-left: 0 !important; }
+        .research-content { color: #000 !important; }
+        .research-content h1, .research-content h2, .research-content h3,
+        .research-content p, .research-content li, .research-content td { color: #000 !important; }
+        body { background: #fff !important; }
     }
 </style>
 
 <script>
-    // Add IDs to headings for anchor links
-    document.addEventListener('DOMContentLoaded', function() {
-        const headings = document.querySelectorAll('.research-content h1, .research-content h2, .research-content h3');
-        headings.forEach(heading => {
-            const text = heading.textContent;
-            const id = text.toLowerCase()
-                .replace(/[^\w\s-]/g, '')
-                .replace(/[-\s]+/g, '-')
-                .trim();
-            heading.id = id;
-        });
+function researchViewer() {
+    return {
+        currentView: 'landing',
+        activeTab: '',
+        discoveredMethods: [],
+        methodSections: {},
+        metrics: {
+            totalObjects: '--',
+            incrementalObjects: '--',
+            fullLoadObjects: '--',
+            authTypes: [],
+            sdkInfo: []
+        },
+        rawContent: {{ raw_content | tojson | safe }},
         
-        // Highlight current section in TOC on scroll
-        const tocLinks = document.querySelectorAll('aside nav a');
-        const observer = new IntersectionObserver((entries) => {
-            entries.forEach(entry => {
-                if (entry.isIntersecting) {
-                    tocLinks.forEach(link => {
-                        link.classList.remove('bg-indigo-500/20', 'border-l-2', 'border-indigo-500');
-                        if (link.getAttribute('href') === '#' + entry.target.id) {
-                            link.classList.add('bg-indigo-500/20');
-                        }
-                    });
+        init() {
+            this.parseContent();
+            if (this.discoveredMethods.length > 0) {
+                this.activeTab = this.discoveredMethods[0];
+            }
+            this.extractMetrics();
+            this.addHeadingIds();
+        },
+        
+        parseContent() {
+            // Parse the raw markdown to extract method sections
+            const content = this.rawContent;
+            
+            // Find method deep dive sections
+            const methodPatterns = [
+                'REST API', 'GraphQL API', 'SOAP/XML API', 'Webhooks',
+                'Bulk/Batch API', 'Official SDK', 'JDBC/ODBC', 'File Export',
+                'REST', 'GraphQL', 'SOAP', 'Bulk API', 'SDK'
+            ];
+            
+            methodPatterns.forEach(method => {
+                // Look for section headers like "## REST API Deep Dive" or "## 4. REST API Deep Dive"
+                const regex = new RegExp(`##\\s*(?:\\d+\\.?\\s*)?${method.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?:\\s+API)?\\s+Deep\\s+Dive([\\s\\S]*?)(?=##\\s*(?:\\d+\\.?\\s*)?(?:${methodPatterns.join('|').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})|##\\s*(?:\\d+\\.?\\s*)?(?:Authentication Comparison|Rate Limiting|Error Handling|Data Model|Delete Detection|Recommended|Object Catalog|Production)|$)`, 'i');
+                const match = content.match(regex);
+                
+                if (match && match[1] && match[1].trim().length > 100) {
+                    if (!this.discoveredMethods.includes(method)) {
+                        this.discoveredMethods.push(method);
+                    }
+                    this.methodSections[method] = this.formatMethodContent(method, match[1]);
                 }
             });
-        }, { threshold: 0.5, rootMargin: '-100px 0px -50% 0px' });
+            
+            // If no methods found, check for simpler patterns
+            if (this.discoveredMethods.length === 0) {
+                methodPatterns.forEach(method => {
+                    const simpleRegex = new RegExp(`##[^#]*${method.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}[^#]*\\n([\\s\\S]*?)(?=##|$)`, 'i');
+                    const match = content.match(simpleRegex);
+                    if (match && match[1] && match[1].trim().length > 200) {
+                        if (!this.discoveredMethods.includes(method)) {
+                            this.discoveredMethods.push(method);
+                        }
+                        this.methodSections[method] = this.formatMethodContent(method, match[1]);
+                    }
+                });
+            }
+        },
         
-        headings.forEach(heading => observer.observe(heading));
-    });
+        formatMethodContent(method, content) {
+            // Convert markdown to HTML (basic conversion)
+            let html = content
+                .replace(/### (.*)/g, '<h3>$1</h3>')
+                .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+                .replace(/`([^`]+)`/g, '<code>$1</code>')
+                .replace(/```(\w*)\n([\s\S]*?)```/g, '<pre><code>$2</code></pre>')
+                .replace(/\n\n/g, '</p><p>')
+                .replace(/^\|(.+)\|$/gm, (match) => {
+                    return match;
+                });
+            
+            // Convert markdown tables to HTML
+            html = this.convertTablesToHtml(html);
+            
+            return `<h2>${method} Deep Dive</h2><p>${html}</p>`;
+        },
+        
+        convertTablesToHtml(content) {
+            // Simple markdown table to HTML conversion
+            const tableRegex = /\|(.+)\|\n\|[-:|]+\|\n((?:\|.+\|\n?)+)/g;
+            
+            return content.replace(tableRegex, (match, headerRow, bodyRows) => {
+                const headers = headerRow.split('|').filter(h => h.trim());
+                const rows = bodyRows.trim().split('\n').map(row => 
+                    row.split('|').filter(c => c.trim())
+                );
+                
+                let table = '<table><thead><tr>';
+                headers.forEach(h => table += `<th>${h.trim()}</th>`);
+                table += '</tr></thead><tbody>';
+                
+                rows.forEach(row => {
+                    table += '<tr>';
+                    row.forEach(cell => table += `<td>${cell.trim()}</td>`);
+                    table += '</tr>';
+                });
+                
+                table += '</tbody></table>';
+                return table;
+            });
+        },
+        
+        extractMetrics() {
+            const content = this.rawContent.toLowerCase();
+            
+            // Count objects (rough estimate from tables)
+            const objectMatches = content.match(/\|\s*\w+\s*\|.*\|.*\|.*incremental/gi);
+            const fullLoadMatches = content.match(/\|\s*\w+\s*\|.*\|.*\|.*full/gi);
+            
+            this.metrics.totalObjects = (objectMatches?.length || 0) + (fullLoadMatches?.length || 0);
+            this.metrics.incrementalObjects = objectMatches?.length || 0;
+            this.metrics.fullLoadObjects = fullLoadMatches?.length || 0;
+            
+            if (this.metrics.totalObjects === 0) {
+                this.metrics.totalObjects = '--';
+                this.metrics.incrementalObjects = '--';
+                this.metrics.fullLoadObjects = '--';
+            }
+            
+            // Extract auth types
+            const authPatterns = ['oauth 2.0', 'oauth2', 'api key', 'basic auth', 'bearer token', 'jwt'];
+            authPatterns.forEach(auth => {
+                if (content.includes(auth)) {
+                    const formatted = auth.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+                    if (!this.metrics.authTypes.includes(formatted)) {
+                        this.metrics.authTypes.push(formatted);
+                    }
+                }
+            });
+            
+            // Extract SDK info
+            const sdkPatterns = ['python sdk', 'java sdk', 'node sdk', 'javascript sdk', 'ruby sdk', '.net sdk'];
+            sdkPatterns.forEach(sdk => {
+                if (content.includes(sdk)) {
+                    const formatted = sdk.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+                    if (!this.metrics.sdkInfo.includes(formatted)) {
+                        this.metrics.sdkInfo.push(formatted);
+                    }
+                }
+            });
+        },
+        
+        addHeadingIds() {
+            setTimeout(() => {
+                const headings = document.querySelectorAll('.research-content h1, .research-content h2, .research-content h3');
+                headings.forEach(heading => {
+                    const text = heading.textContent;
+                    const id = text.toLowerCase()
+                        .replace(/[^\w\s-]/g, '')
+                        .replace(/[-\s]+/g, '-')
+                        .trim();
+                    heading.id = id;
+                });
+            }, 100);
+        },
+        
+        selectMethod(method) {
+            this.activeTab = method;
+            this.currentView = 'methods';
+        },
+        
+        getMethodContent(method) {
+            return this.methodSections[method] || `<p class="text-gray-400">Content for ${method} not found in the research document.</p>`;
+        },
+        
+        scrollToSection(anchor) {
+            this.currentView = 'document';
+            setTimeout(() => {
+                const element = document.getElementById(anchor);
+                if (element) {
+                    element.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                }
+            }, 100);
+        },
+        
+        getMethodColor(method) {
+            const colors = {
+                'REST API': 'bg-blue-500/20',
+                'REST': 'bg-blue-500/20',
+                'GraphQL API': 'bg-pink-500/20',
+                'GraphQL': 'bg-pink-500/20',
+                'SOAP/XML API': 'bg-orange-500/20',
+                'SOAP': 'bg-orange-500/20',
+                'Webhooks': 'bg-green-500/20',
+                'Bulk/Batch API': 'bg-purple-500/20',
+                'Bulk API': 'bg-purple-500/20',
+                'Official SDK': 'bg-cyan-500/20',
+                'SDK': 'bg-cyan-500/20',
+                'JDBC/ODBC': 'bg-amber-500/20',
+                'File Export': 'bg-rose-500/20'
+            };
+            return colors[method] || 'bg-indigo-500/20';
+        },
+        
+        getMethodIcon(method) {
+            const icons = {
+                'REST API': '<svg class="w-6 h-6 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>',
+                'REST': '<svg class="w-6 h-6 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>',
+                'GraphQL API': '<svg class="w-6 h-6 text-pink-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 5a1 1 0 011-1h14a1 1 0 011 1v2a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM4 13a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H5a1 1 0 01-1-1v-6zM16 13a1 1 0 011-1h2a1 1 0 011 1v6a1 1 0 01-1 1h-2a1 1 0 01-1-1v-6z"></path></svg>',
+                'GraphQL': '<svg class="w-6 h-6 text-pink-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 5a1 1 0 011-1h14a1 1 0 011 1v2a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM4 13a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H5a1 1 0 01-1-1v-6zM16 13a1 1 0 011-1h2a1 1 0 011 1v6a1 1 0 01-1 1h-2a1 1 0 01-1-1v-6z"></path></svg>',
+                'Webhooks': '<svg class="w-6 h-6 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>',
+                'Bulk/Batch API': '<svg class="w-6 h-6 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4"></path></svg>',
+                'Bulk API': '<svg class="w-6 h-6 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4"></path></svg>',
+                'Official SDK': '<svg class="w-6 h-6 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 14v3m4-3v3m4-3v3M3 21h18M3 10h18M3 7l9-4 9 4M4 10h16v11H4V10z"></path></svg>',
+                'SDK': '<svg class="w-6 h-6 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 14v3m4-3v3m4-3v3M3 21h18M3 10h18M3 7l9-4 9 4M4 10h16v11H4V10z"></path></svg>',
+                'JDBC/ODBC': '<svg class="w-6 h-6 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4"></path></svg>',
+                'File Export': '<svg class="w-6 h-6 text-rose-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>'
+            };
+            return icons[method] || '<svg class="w-6 h-6 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"></path></svg>';
+        },
+        
+        getMethodDescription(method) {
+            const descriptions = {
+                'REST API': 'HTTP endpoints for CRUD operations',
+                'REST': 'HTTP endpoints for CRUD operations',
+                'GraphQL API': 'Flexible query language',
+                'GraphQL': 'Flexible query language',
+                'SOAP/XML API': 'XML-based web services',
+                'SOAP': 'XML-based web services',
+                'Webhooks': 'Real-time event notifications',
+                'Bulk/Batch API': 'High-volume data export',
+                'Bulk API': 'High-volume data export',
+                'Official SDK': 'Native client libraries',
+                'SDK': 'Native client libraries',
+                'JDBC/ODBC': 'Direct database access',
+                'File Export': 'CSV/JSON file downloads'
+            };
+            return descriptions[method] || 'Data extraction method';
+        }
+    };
+}
 </script>
 {% endblock %}
