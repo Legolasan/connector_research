@@ -458,17 +458,17 @@ async def search(request: SearchRequest):
         )
     else:
         # Search across all complete connectors
-    connectors = connector_manager.list_connectors()
-    connector_ids = [c.id for c in connectors if c.status == ConnectorStatus.COMPLETE.value]
-    
-    if not connector_ids:
+        connectors = connector_manager.list_connectors()
+        connector_ids = [c.id for c in connectors if c.status == ConnectorStatus.COMPLETE.value]
+        
+        if not connector_ids:
             return SearchResponse(query=request.query, results=[], total_results=0)
-    
-    results = pinecone_manager.search_all_connectors(
-        query=request.query,
-        connector_ids=connector_ids,
-        top_k=request.top_k
-    )
+        
+        results = pinecone_manager.search_all_connectors(
+            query=request.query,
+            connector_ids=connector_ids,
+            top_k=request.top_k
+        )
     
     return SearchResponse(
         query=request.query,
