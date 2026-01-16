@@ -151,18 +151,38 @@ class ConnectorManager:
         
         Args:
             base_dir: Base directory for connector research files.
-                     Defaults to research_docs/connectors/
+                     Defaults to /tmp/connectors on Railway, local connectors/ otherwise
         """
         if base_dir is None:
-            base_dir = Path(__file__).parent.parent.parent / "connectors"
+            # Use CONNECTOR_DATA_DIR env var if set
+            env_dir = os.getenv("CONNECTOR_DATA_DIR")
+            if env_dir:
+                base_dir = Path(env_dir)
+            elif os.getenv("RAILWAY_ENVIRONMENT") or os.getenv("PORT"):
+                # On Railway or production (PORT is set), use /tmp which is always writable
+                base_dir = Path("/tmp/connectors")
+            else:
+                # Local development
+                base_dir = Path(__file__).parent.parent.parent / "connectors"
         
         self.base_dir = Path(base_dir)
         self.registry_file = self.base_dir / "_agent" / "connectors_registry.json"
         
-        # Ensure directories exist
-        self.base_dir.mkdir(parents=True, exist_ok=True)
-        (self.base_dir / "_agent").mkdir(exist_ok=True)
-        (self.base_dir / "_templates").mkdir(exist_ok=True)
+        # Ensure directories exist with error handling
+        try:
+            self.base_dir.mkdir(parents=True, exist_ok=True)
+            (self.base_dir / "_agent").mkdir(exist_ok=True)
+            (self.base_dir / "_templates").mkdir(exist_ok=True)
+            print(f"✓ ConnectorManager data directory: {self.base_dir}")
+        except Exception as e:
+            print(f"⚠ Could not create directories at {self.base_dir}: {e}")
+            # Fallback to /tmp
+            self.base_dir = Path("/tmp/connectors")
+            self.registry_file = self.base_dir / "_agent" / "connectors_registry.json"
+            self.base_dir.mkdir(parents=True, exist_ok=True)
+            (self.base_dir / "_agent").mkdir(exist_ok=True)
+            (self.base_dir / "_templates").mkdir(exist_ok=True)
+            print(f"✓ Using fallback directory: {self.base_dir}")
         
         # Load or initialize registry
         self._registry: Dict[str, Connector] = {}
