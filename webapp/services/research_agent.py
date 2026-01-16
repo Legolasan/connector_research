@@ -1382,10 +1382,17 @@ Generate comprehensive markdown content for this section. Include:
             if on_progress:
                 on_progress(self._current_progress)
             
-            # Build Fivetran context
+            # Build Fivetran context - map final sections to original section logic
             section_fivetran_context = ""
             if fivetran_context and section.requires_fivetran:
-                section_fivetran_context = self._build_fivetran_section_context(section.number, fivetran_context)
+                # Map final section names to original section numbers for Fivetran context
+                fivetran_section_map = {
+                    200: 8,   # Recommended Extraction Strategy -> Sync Strategies
+                    201: 19,  # Object Catalog & Replication Guide -> Object Catalog (Section 19)
+                    202: 16,  # Production Checklist -> Operational Test Data
+                }
+                mapped_section = fivetran_section_map.get(section.number, section.number)
+                section_fivetran_context = self._build_fivetran_section_context(mapped_section, fivetran_context)
             
             section_content = await self._generate_section(
                 section=section_copy,

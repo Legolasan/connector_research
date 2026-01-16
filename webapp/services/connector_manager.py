@@ -345,12 +345,13 @@ class ConnectorManager:
             'fivetran_parity': None,
             'progress': {
                 'current_section': 0,
-                'total_sections': 18,
+                'total_sections': 0,  # Dynamic - calculated after method discovery
                 'current_phase': 0,
                 'sections_completed': [],
                 'sections_failed': [],
                 'current_section_name': '',
-                'research_method': {}
+                'research_method': {},
+                'discovered_methods': []
             },
             'created_at': datetime.utcnow().isoformat(),
             'updated_at': datetime.utcnow().isoformat(),
