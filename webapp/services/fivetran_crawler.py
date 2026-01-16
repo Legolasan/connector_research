@@ -222,7 +222,17 @@ class FivetranCrawler:
         if self._playwright is None:
             try:
                 self._playwright = await async_playwright().start()
-                self._browser = await self._playwright.chromium.launch(headless=True)
+                # Launch with server-friendly arguments (required for Railway/Docker)
+                self._browser = await self._playwright.chromium.launch(
+                    headless=True,
+                    args=[
+                        '--no-sandbox',
+                        '--disable-setuid-sandbox',
+                        '--disable-gpu',
+                        '--disable-dev-shm-usage',  # Overcome limited /dev/shm in containers
+                        '--single-process'  # Reduce memory usage
+                    ]
+                )
                 print("✓ Headless browser initialized")
                 return True
             except Exception as e:

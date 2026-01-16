@@ -1,0 +1,6 @@
+# Nixpacks configuration for Railway deployment
+# Installs Playwright Chromium browser for headless crawling
+
+[phases.chromium]
+dependsOn = ["install"]
+cmds = ["playwright install --with-deps chromium"]
