@@ -468,18 +468,23 @@
             <div class="flex gap-2 mb-6">
                 <button @click="vaultUploadType = 'text'" 
                         :class="vaultUploadType === 'text' ? 'bg-amber-500/20 text-amber-400 border-amber-500/30' : 'bg-black/40 text-gray-400 border-white/10'"
-                        class="flex-1 py-3 rounded-xl border font-medium transition-colors">
+                        class="flex-1 py-3 rounded-xl border font-medium transition-colors text-sm">
                     Paste Text
                 </button>
                 <button @click="vaultUploadType = 'url'" 
                         :class="vaultUploadType === 'url' ? 'bg-amber-500/20 text-amber-400 border-amber-500/30' : 'bg-black/40 text-gray-400 border-white/10'"
-                        class="flex-1 py-3 rounded-xl border font-medium transition-colors">
+                        class="flex-1 py-3 rounded-xl border font-medium transition-colors text-sm">
                     From URL
                 </button>
                 <button @click="vaultUploadType = 'file'" 
                         :class="vaultUploadType === 'file' ? 'bg-amber-500/20 text-amber-400 border-amber-500/30' : 'bg-black/40 text-gray-400 border-white/10'"
-                        class="flex-1 py-3 rounded-xl border font-medium transition-colors">
-                    Upload File
+                        class="flex-1 py-3 rounded-xl border font-medium transition-colors text-sm">
+                    Single File
+                </button>
+                <button @click="vaultUploadType = 'bulk'" 
+                        :class="vaultUploadType === 'bulk' ? 'bg-green-500/20 text-green-400 border-green-500/30' : 'bg-black/40 text-gray-400 border-white/10'"
+                        class="flex-1 py-3 rounded-xl border font-medium transition-colors text-sm">
+                    📚 Bulk (500+)
                 </button>
             </div>
             
@@ -530,26 +535,87 @@
                     <p class="text-xs text-gray-500 mt-2">The system will fetch and index the page content.</p>
                 </div>
                 
-                <!-- File Upload -->
+                <!-- Single File Upload -->
                 <div x-show="vaultUploadType === 'file'" class="mb-6">
-                    <label class="block text-sm font-medium text-gray-300 mb-2">Upload File *</label>
+                    <label class="block text-sm font-medium text-gray-300 mb-2">Upload File (PDF, MD, TXT, JSON, HTML) *</label>
                     <label class="flex items-center justify-center px-4 py-8 bg-black/40 border border-dashed border-white/20 hover:border-amber-500/50 rounded-xl cursor-pointer transition-colors group">
                         <input type="file" 
-                               accept=".md,.txt,.json,.html"
+                               accept=".pdf,.md,.txt,.json,.html"
                                @change="handleVaultFileUpload($event)"
                                class="hidden">
                         <div class="text-center">
                             <svg class="w-10 h-10 text-gray-500 group-hover:text-amber-400 mx-auto mb-2 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 13h6m-3-3v6m5 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
                             </svg>
-                            <span x-show="!vaultUpload.file" class="text-sm text-gray-500 group-hover:text-gray-300 transition-colors">Click to upload .md, .txt, .json, or .html</span>
+                            <span x-show="!vaultUpload.file" class="text-sm text-gray-500 group-hover:text-gray-300 transition-colors">Click to upload PDF, MD, TXT, JSON, or HTML</span>
                             <span x-show="vaultUpload.file" class="text-sm text-amber-400" x-text="vaultUpload.file?.name"></span>
                         </div>
                     </label>
                 </div>
                 
+                <!-- Bulk Upload (500+ files) -->
+                <div x-show="vaultUploadType === 'bulk'" class="mb-6">
+                    <label class="block text-sm font-medium text-gray-300 mb-2">📚 Bulk Upload (Select Multiple Files)</label>
+                    <label class="flex items-center justify-center px-4 py-10 bg-gradient-to-br from-green-500/10 to-emerald-500/10 border-2 border-dashed border-green-500/30 hover:border-green-500/50 rounded-xl cursor-pointer transition-colors group">
+                        <input type="file" 
+                               accept=".pdf,.md,.txt,.json,.html"
+                               multiple
+                               @change="handleBulkFileUpload($event)"
+                               class="hidden">
+                        <div class="text-center">
+                            <div class="text-5xl mb-3">📚</div>
+                            <span x-show="!vaultUpload.files || vaultUpload.files.length === 0" class="text-sm text-gray-400 group-hover:text-gray-300 transition-colors block">
+                                Click to select multiple PDF files (500+)
+                            </span>
+                            <span x-show="vaultUpload.files && vaultUpload.files.length > 0" class="text-sm text-green-400 block">
+                                <span x-text="vaultUpload.files.length"></span> files selected
+                            </span>
+                            <span class="text-xs text-gray-500 block mt-2">Supports: PDF, MD, TXT, JSON, HTML</span>
+                        </div>
+                    </label>
+                    
+                    <!-- Selected Files Preview -->
+                    <div x-show="vaultUpload.files && vaultUpload.files.length > 0" class="mt-4 max-h-40 overflow-auto">
+                        <div class="flex items-center justify-between text-sm text-gray-400 mb-2">
+                            <span x-text="'Selected ' + vaultUpload.files.length + ' files'"></span>
+                            <button type="button" @click="vaultUpload.files = []" class="text-red-400 hover:text-red-300">Clear all</button>
+                        </div>
+                        <div class="space-y-1">
+                            <template x-for="(file, index) in Array.from(vaultUpload.files || []).slice(0, 10)" :key="index">
+                                <div class="flex items-center gap-2 text-xs bg-black/30 px-3 py-2 rounded-lg">
+                                    <span class="text-green-400">📄</span>
+                                    <span class="text-gray-300 truncate flex-1" x-text="file.name"></span>
+                                    <span class="text-gray-500" x-text="(file.size / 1024).toFixed(1) + ' KB'"></span>
+                                </div>
+                            </template>
+                            <div x-show="vaultUpload.files && vaultUpload.files.length > 10" class="text-xs text-gray-500 text-center py-2">
+                                ... and <span x-text="vaultUpload.files.length - 10"></span> more files
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Bulk Upload Progress -->
+                    <div x-show="bulkUploadProgress" class="mt-4 bg-black/40 rounded-xl p-4">
+                        <div class="flex items-center justify-between text-sm mb-2">
+                            <span class="text-gray-300">Processing files...</span>
+                            <span class="text-green-400" x-text="bulkUploadProgress?.percentage?.toFixed(1) + '%'"></span>
+                        </div>
+                        <div class="w-full bg-gray-700 rounded-full h-2 mb-2">
+                            <div class="bg-green-500 h-2 rounded-full transition-all duration-300" 
+                                 :style="'width: ' + (bulkUploadProgress?.percentage || 0) + '%'"></div>
+                        </div>
+                        <div class="flex justify-between text-xs text-gray-500">
+                            <span x-text="(bulkUploadProgress?.processed_files || 0) + '/' + (bulkUploadProgress?.total_files || 0) + ' files'"></span>
+                            <span x-text="(bulkUploadProgress?.total_chunks || 0) + ' chunks created'"></span>
+                        </div>
+                        <div x-show="bulkUploadProgress?.current_file" class="text-xs text-gray-400 mt-2 truncate">
+                            Current: <span x-text="bulkUploadProgress?.current_file"></span>
+                        </div>
+                    </div>
+                </div>
+                
                 <!-- Info Box -->
-                <div class="bg-amber-500/10 border border-amber-500/20 rounded-xl p-4 mb-6">
+                <div x-show="vaultUploadType !== 'bulk'" class="bg-amber-500/10 border border-amber-500/20 rounded-xl p-4 mb-6">
                     <div class="flex items-start gap-3">
                         <span class="text-xl">💡</span>
                         <div>
@@ -559,13 +625,25 @@
                     </div>
                 </div>
                 
+                <!-- Bulk Upload Info Box -->
+                <div x-show="vaultUploadType === 'bulk'" class="bg-green-500/10 border border-green-500/20 rounded-xl p-4 mb-6">
+                    <div class="flex items-start gap-3">
+                        <span class="text-xl">📚</span>
+                        <div>
+                            <p class="text-sm text-green-300 font-medium">Bulk Upload (500+ Files)</p>
+                            <p class="text-xs text-gray-400 mt-1">Upload hundreds of PDF files at once! Processing happens in the background so you can continue working. Large batches may take several minutes.</p>
+                        </div>
+                    </div>
+                </div>
+                
                 <div class="flex items-center justify-end gap-3 pt-4 border-t border-white/10">
-                    <button type="button" @click="showVaultUploadModal = false" class="px-6 py-3 text-gray-400 hover:text-white transition-colors">Cancel</button>
+                    <button type="button" @click="showVaultUploadModal = false; bulkUploadProgress = null" class="px-6 py-3 text-gray-400 hover:text-white transition-colors">Cancel</button>
                     <button type="submit" 
-                            :disabled="!vaultUpload.connector_name || !vaultUpload.title || isUploadingVault"
-                            class="px-6 py-3 bg-amber-600 hover:bg-amber-500 disabled:opacity-50 disabled:cursor-not-allowed rounded-xl font-medium transition-colors flex items-center gap-2">
+                            :disabled="!vaultUpload.connector_name || isUploadingVault || (vaultUploadType === 'bulk' && (!vaultUpload.files || vaultUpload.files.length === 0))"
+                            class="px-6 py-3 bg-amber-600 hover:bg-amber-500 disabled:opacity-50 disabled:cursor-not-allowed rounded-xl font-medium transition-colors flex items-center gap-2"
+                            :class="vaultUploadType === 'bulk' ? 'bg-green-600 hover:bg-green-500' : ''">
                         <span x-show="isUploadingVault" class="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
-                        <span x-text="isUploadingVault ? 'Indexing...' : 'Index Documentation'"></span>
+                        <span x-text="isUploadingVault ? (vaultUploadType === 'bulk' ? 'Uploading ' + (vaultUpload.files?.length || 0) + ' files...' : 'Indexing...') : (vaultUploadType === 'bulk' ? 'Upload ' + (vaultUpload.files?.length || 0) + ' Files' : 'Index Documentation')"></span>
                     </button>
                 </div>
             </form>

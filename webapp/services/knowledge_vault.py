@@ -3,16 +3,25 @@
 Pre-indexed official documentation for enterprise-grade connector research.
 
 "The Vault remembers what the web forgets."
+
+Now with:
+- PDF parsing support (500+ documents)
+- Bulk upload with background processing
+- Progress tracking for large batches
 """
 
 import os
 import re
+import io
 import hashlib
 import asyncio
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Tuple, Callable
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
+from pathlib import Path
+import tempfile
+import json
 
 from openai import OpenAI
 from sqlalchemy import text
@@ -24,6 +33,16 @@ from services.database import (
 )
 
 load_dotenv()
+
+
+# PDF parsing support
+try:
+    from pypdf import PdfReader
+    PDF_SUPPORT = True
+    print("📄 PDF parsing enabled (pypdf)")
+except ImportError:
+    PDF_SUPPORT = False
+    print("⚠ PDF parsing not available (install pypdf)")
 
 
 class KnowledgeSourceType(str, Enum):
@@ -62,6 +81,50 @@ class VaultSearchResult:
     source_url: Optional[str] = None
 
 
+@dataclass
+class BulkUploadProgress:
+    """Tracks progress of bulk document upload."""
+    job_id: str
+    connector_name: str
+    total_files: int
+    processed_files: int = 0
+    successful_files: int = 0
+    failed_files: int = 0
+    total_chunks: int = 0
+    status: str = "pending"  # pending, processing, completed, failed
+    current_file: str = ""
+    errors: List[str] = field(default_factory=list)
+    started_at: datetime = field(default_factory=datetime.utcnow)
+    completed_at: Optional[datetime] = None
+    
+    @property
+    def percentage(self) -> float:
+        if self.total_files == 0:
+            return 0.0
+        return (self.processed_files / self.total_files) * 100
+    
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "job_id": self.job_id,
+            "connector_name": self.connector_name,
+            "total_files": self.total_files,
+            "processed_files": self.processed_files,
+            "successful_files": self.successful_files,
+            "failed_files": self.failed_files,
+            "total_chunks": self.total_chunks,
+            "status": self.status,
+            "current_file": self.current_file,
+            "percentage": self.percentage,
+            "errors": self.errors[-10:],  # Last 10 errors
+            "started_at": self.started_at.isoformat(),
+            "completed_at": self.completed_at.isoformat() if self.completed_at else None
+        }
+
+
+# Global tracking for bulk upload jobs
+_bulk_upload_jobs: Dict[str, BulkUploadProgress] = {}
+
+
 class KnowledgeVault:
     """
     📚 Knowledge Vault - The sacred repository of connector wisdom!
@@ -92,6 +155,76 @@ class KnowledgeVault:
             print("  ✓ Using pgvector for semantic search")
         else:
             print("  ⚠ Using JSON fallback for embeddings")
+        
+        if PDF_SUPPORT:
+            print("  ✓ PDF parsing enabled")
+        else:
+            print("  ⚠ PDF parsing disabled")
+    
+    def parse_pdf(self, pdf_content: bytes, filename: str = "document.pdf") -> Tuple[str, Dict[str, Any]]:
+        """
+        Parse PDF content and extract text.
+        
+        Args:
+            pdf_content: Raw PDF bytes
+            filename: Original filename for metadata
+            
+        Returns:
+            Tuple of (extracted_text, metadata)
+        """
+        if not PDF_SUPPORT:
+            raise RuntimeError("PDF parsing not available. Install pypdf: pip install pypdf")
+        
+        try:
+            # Create PDF reader from bytes
+            pdf_file = io.BytesIO(pdf_content)
+            reader = PdfReader(pdf_file)
+            
+            # Extract metadata
+            metadata = {
+                "filename": filename,
+                "pages": len(reader.pages),
+                "pdf_info": {}
+            }
+            
+            if reader.metadata:
+                metadata["pdf_info"] = {
+                    "title": reader.metadata.get("/Title", ""),
+                    "author": reader.metadata.get("/Author", ""),
+                    "subject": reader.metadata.get("/Subject", ""),
+                    "creator": reader.metadata.get("/Creator", "")
+                }
+            
+            # Extract text from all pages
+            text_parts = []
+            for i, page in enumerate(reader.pages):
+                try:
+                    page_text = page.extract_text()
+                    if page_text:
+                        text_parts.append(f"--- Page {i+1} ---\n{page_text}")
+                except Exception as e:
+                    text_parts.append(f"--- Page {i+1} (extraction error: {str(e)}) ---")
+            
+            full_text = "\n\n".join(text_parts)
+            
+            # Clean up text
+            full_text = self._clean_pdf_text(full_text)
+            
+            return full_text, metadata
+            
+        except Exception as e:
+            raise RuntimeError(f"Failed to parse PDF '{filename}': {str(e)}")
+    
+    def _clean_pdf_text(self, text: str) -> str:
+        """Clean extracted PDF text."""
+        # Remove excessive whitespace
+        text = re.sub(r'\n\s*\n\s*\n+', '\n\n', text)
+        text = re.sub(r' +', ' ', text)
+        
+        # Fix common PDF extraction issues
+        text = re.sub(r'(\w)-\n(\w)', r'\1\2', text)  # Fix hyphenated words
+        
+        return text.strip()
     
     def _generate_embedding(self, text: str) -> List[float]:
         """Generate embedding vector for text."""
@@ -525,6 +658,211 @@ class KnowledgeVault:
         """List all connectors with knowledge in the vault."""
         stats = self.get_stats()
         return [c["name"] for c in stats.get("connectors", [])]
+    
+    # =========================================================================
+    # Bulk Upload Methods (for 500+ documents)
+    # =========================================================================
+    
+    def index_pdf(
+        self,
+        connector_name: str,
+        pdf_content: bytes,
+        filename: str,
+        source_type: KnowledgeSourceType = KnowledgeSourceType.OFFICIAL_DOCS
+    ) -> VaultDocument:
+        """
+        Index a single PDF document.
+        
+        Args:
+            connector_name: Name of the connector
+            pdf_content: Raw PDF bytes
+            filename: Original filename
+            source_type: Type of knowledge source
+            
+        Returns:
+            VaultDocument with indexing stats
+        """
+        # Parse PDF
+        text_content, metadata = self.parse_pdf(pdf_content, filename)
+        
+        # Use PDF title or filename
+        title = metadata.get("pdf_info", {}).get("title") or filename
+        
+        # Index the extracted text
+        return self.index_document(
+            connector_name=connector_name,
+            title=title,
+            content=text_content,
+            source_type=source_type,
+            source_url=f"file://{filename}"
+        )
+    
+    def start_bulk_upload(
+        self,
+        connector_name: str,
+        total_files: int
+    ) -> str:
+        """
+        Start a bulk upload job and return the job ID.
+        
+        Args:
+            connector_name: Name of the connector
+            total_files: Total number of files to process
+            
+        Returns:
+            Job ID for tracking progress
+        """
+        job_id = hashlib.md5(f"{connector_name}:{datetime.utcnow().isoformat()}".encode()).hexdigest()[:12]
+        
+        progress = BulkUploadProgress(
+            job_id=job_id,
+            connector_name=connector_name,
+            total_files=total_files,
+            status="processing"
+        )
+        
+        _bulk_upload_jobs[job_id] = progress
+        
+        print(f"📚 Vault: Started bulk upload job {job_id} for {connector_name} ({total_files} files)")
+        
+        return job_id
+    
+    def process_bulk_file(
+        self,
+        job_id: str,
+        file_content: bytes,
+        filename: str,
+        source_type: KnowledgeSourceType = KnowledgeSourceType.OFFICIAL_DOCS
+    ) -> bool:
+        """
+        Process a single file in a bulk upload job.
+        
+        Args:
+            job_id: The bulk upload job ID
+            file_content: File content bytes
+            filename: Original filename
+            source_type: Type of knowledge source
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        if job_id not in _bulk_upload_jobs:
+            return False
+        
+        progress = _bulk_upload_jobs[job_id]
+        progress.current_file = filename
+        
+        try:
+            # Determine file type and process accordingly
+            filename_lower = filename.lower()
+            
+            if filename_lower.endswith('.pdf'):
+                doc = self.index_pdf(
+                    connector_name=progress.connector_name,
+                    pdf_content=file_content,
+                    filename=filename,
+                    source_type=source_type
+                )
+            else:
+                # Try to decode as text
+                try:
+                    text_content = file_content.decode('utf-8')
+                except UnicodeDecodeError:
+                    text_content = file_content.decode('latin-1')
+                
+                doc = self.index_document(
+                    connector_name=progress.connector_name,
+                    title=filename,
+                    content=text_content,
+                    source_type=source_type,
+                    source_url=f"file://{filename}"
+                )
+            
+            progress.successful_files += 1
+            progress.total_chunks += doc.chunk_count
+            return True
+            
+        except Exception as e:
+            progress.failed_files += 1
+            progress.errors.append(f"{filename}: {str(e)}")
+            print(f"  ⚠ Failed to process {filename}: {e}")
+            return False
+        finally:
+            progress.processed_files += 1
+    
+    def complete_bulk_upload(self, job_id: str) -> BulkUploadProgress:
+        """
+        Mark a bulk upload job as complete.
+        
+        Args:
+            job_id: The bulk upload job ID
+            
+        Returns:
+            Final progress status
+        """
+        if job_id not in _bulk_upload_jobs:
+            raise ValueError(f"Unknown job ID: {job_id}")
+        
+        progress = _bulk_upload_jobs[job_id]
+        progress.status = "completed"
+        progress.completed_at = datetime.utcnow()
+        progress.current_file = ""
+        
+        print(f"📚 Vault: Completed bulk upload job {job_id}")
+        print(f"  ✓ Processed: {progress.processed_files}/{progress.total_files}")
+        print(f"  ✓ Successful: {progress.successful_files}")
+        print(f"  ✗ Failed: {progress.failed_files}")
+        print(f"  📄 Total chunks: {progress.total_chunks}")
+        
+        return progress
+    
+    def get_bulk_upload_progress(self, job_id: str) -> Optional[BulkUploadProgress]:
+        """
+        Get progress for a bulk upload job.
+        
+        Args:
+            job_id: The bulk upload job ID
+            
+        Returns:
+            Progress object or None if not found
+        """
+        return _bulk_upload_jobs.get(job_id)
+    
+    def list_bulk_upload_jobs(self) -> List[Dict[str, Any]]:
+        """List all bulk upload jobs."""
+        return [progress.to_dict() for progress in _bulk_upload_jobs.values()]
+    
+    async def process_bulk_upload_async(
+        self,
+        connector_name: str,
+        files: List[Tuple[str, bytes]],
+        source_type: KnowledgeSourceType = KnowledgeSourceType.OFFICIAL_DOCS,
+        on_progress: Optional[Callable[[BulkUploadProgress], None]] = None
+    ) -> BulkUploadProgress:
+        """
+        Process a bulk upload asynchronously.
+        
+        Args:
+            connector_name: Name of the connector
+            files: List of (filename, content_bytes) tuples
+            source_type: Type of knowledge source
+            on_progress: Optional callback for progress updates
+            
+        Returns:
+            Final progress status
+        """
+        job_id = self.start_bulk_upload(connector_name, len(files))
+        
+        for filename, content in files:
+            self.process_bulk_file(job_id, content, filename, source_type)
+            
+            if on_progress:
+                on_progress(_bulk_upload_jobs[job_id])
+            
+            # Yield control to allow other tasks
+            await asyncio.sleep(0.01)
+        
+        return self.complete_bulk_upload(job_id)
 
 
 # Singleton instance
@@ -537,3 +875,8 @@ def get_knowledge_vault() -> KnowledgeVault:
     if _vault is None:
         _vault = KnowledgeVault()
     return _vault
+
+
+def get_bulk_upload_jobs() -> Dict[str, BulkUploadProgress]:
+    """Get all bulk upload jobs."""
+    return _bulk_upload_jobs

@@ -38,15 +38,18 @@ function dashboard() {
         showVaultUploadModal: false,
         isUploadingVault: false,
         vaultStats: { connectors: [], connector_count: 0, total_chunks: 0 },
-        vaultUploadType: 'text',  // 'text', 'url', or 'file'
+        vaultUploadType: 'text',  // 'text', 'url', 'file', or 'bulk'
         vaultUpload: {
             connector_name: '',
             title: '',
             source_type: 'official_docs',
             content: '',
             url: '',
-            file: null
+            file: null,
+            files: null  // For bulk upload (FileList)
         },
+        bulkUploadProgress: null,  // Progress tracking for bulk uploads
+        bulkUploadJobId: null,
 
         // Initialize
         async init() {
@@ -456,7 +459,7 @@ function dashboard() {
         },
         
         async submitVaultUpload() {
-            if (!this.vaultUpload.connector_name || !this.vaultUpload.title) return;
+            if (!this.vaultUpload.connector_name) return;
             
             this.isUploadingVault = true;
             
@@ -467,6 +470,7 @@ function dashboard() {
                     // Text upload
                     if (!this.vaultUpload.content) {
                         alert('Please enter documentation content');
+                        this.isUploadingVault = false;
                         return;
                     }
                     
@@ -475,7 +479,7 @@ function dashboard() {
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
                             connector_name: this.vaultUpload.connector_name,
-                            title: this.vaultUpload.title,
+                            title: this.vaultUpload.title || 'Documentation',
                             content: this.vaultUpload.content,
                             source_type: this.vaultUpload.source_type
                         })
@@ -485,6 +489,7 @@ function dashboard() {
                     // URL fetch
                     if (!this.vaultUpload.url) {
                         alert('Please enter a documentation URL');
+                        this.isUploadingVault = false;
                         return;
                     }
                     
@@ -499,15 +504,16 @@ function dashboard() {
                     });
                     
                 } else if (this.vaultUploadType === 'file') {
-                    // File upload
+                    // Single file upload
                     if (!this.vaultUpload.file) {
                         alert('Please select a file');
+                        this.isUploadingVault = false;
                         return;
                     }
                     
                     const formData = new FormData();
                     formData.append('connector_name', this.vaultUpload.connector_name);
-                    formData.append('title', this.vaultUpload.title);
+                    formData.append('title', this.vaultUpload.title || this.vaultUpload.file.name);
                     formData.append('source_type', this.vaultUpload.source_type);
                     formData.append('file', this.vaultUpload.file);
                     
@@ -515,26 +521,53 @@ function dashboard() {
                         method: 'POST',
                         body: formData
                     });
+                    
+                } else if (this.vaultUploadType === 'bulk') {
+                    // Bulk upload (500+ files)
+                    if (!this.vaultUpload.files || this.vaultUpload.files.length === 0) {
+                        alert('Please select files to upload');
+                        this.isUploadingVault = false;
+                        return;
+                    }
+                    
+                    const formData = new FormData();
+                    formData.append('connector_name', this.vaultUpload.connector_name);
+                    formData.append('source_type', this.vaultUpload.source_type);
+                    
+                    // Add all files
+                    for (const file of this.vaultUpload.files) {
+                        formData.append('files', file);
+                    }
+                    
+                    // Start bulk upload (background processing)
+                    response = await fetch('/api/vault/bulk-upload', {
+                        method: 'POST',
+                        body: formData
+                    });
+                    
+                    if (response.ok) {
+                        const data = await response.json();
+                        this.bulkUploadJobId = data.job_id;
+                        
+                        // Start polling for progress
+                        this.pollBulkUploadProgress();
+                        
+                        alert(`Started uploading ${data.total_files} files in background. You can track progress here.`);
+                        return; // Don't close modal yet
+                    }
                 }
                 
-                if (response.ok) {
+                if (response && response.ok) {
                     const data = await response.json();
-                    alert(`Successfully indexed ${data.chunk_count} chunks for ${data.connector_name}!`);
+                    alert(`Successfully indexed ${data.chunk_count || data.total_chunks || 0} chunks for ${data.connector_name}!`);
                     
                     // Reset form
-                    this.vaultUpload = {
-                        connector_name: '',
-                        title: '',
-                        source_type: 'official_docs',
-                        content: '',
-                        url: '',
-                        file: null
-                    };
+                    this.resetVaultUploadForm();
                     this.showVaultUploadModal = false;
                     
                     // Reload stats
                     await this.loadVaultStats();
-                } else {
+                } else if (response) {
                     const error = await response.json();
                     alert('Error: ' + (error.detail || 'Failed to index documentation'));
                 }
@@ -544,6 +577,49 @@ function dashboard() {
             } finally {
                 this.isUploadingVault = false;
             }
+        },
+        
+        resetVaultUploadForm() {
+            this.vaultUpload = {
+                connector_name: '',
+                title: '',
+                source_type: 'official_docs',
+                content: '',
+                url: '',
+                file: null,
+                files: null
+            };
+            this.bulkUploadProgress = null;
+            this.bulkUploadJobId = null;
+        },
+        
+        async pollBulkUploadProgress() {
+            if (!this.bulkUploadJobId) return;
+            
+            try {
+                const response = await fetch(`/api/vault/bulk-upload/${this.bulkUploadJobId}`);
+                if (response.ok) {
+                    this.bulkUploadProgress = await response.json();
+                    
+                    // Continue polling if not completed
+                    if (this.bulkUploadProgress.status === 'processing') {
+                        setTimeout(() => this.pollBulkUploadProgress(), 1000);
+                    } else if (this.bulkUploadProgress.status === 'completed') {
+                        alert(`Bulk upload complete!\n\nProcessed: ${this.bulkUploadProgress.processed_files}/${this.bulkUploadProgress.total_files}\nSuccessful: ${this.bulkUploadProgress.successful_files}\nFailed: ${this.bulkUploadProgress.failed_files}\nTotal chunks: ${this.bulkUploadProgress.total_chunks}`);
+                        
+                        // Reset and close
+                        this.resetVaultUploadForm();
+                        this.showVaultUploadModal = false;
+                        await this.loadVaultStats();
+                    }
+                }
+            } catch (error) {
+                console.error('Error polling progress:', error);
+            }
+        },
+        
+        handleBulkFileUpload(event) {
+            this.vaultUpload.files = event.target.files;
         },
         
         handleVaultFileUpload(event) {

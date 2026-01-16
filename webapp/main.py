@@ -963,41 +963,50 @@ async def index_vault_from_url(request: VaultIndexFromUrlRequest):
 @app.post("/api/vault/index-file")
 async def index_vault_from_file(
     connector_name: str = Form(...),
-    title: str = Form(...),
+    title: str = Form(None),
     source_type: str = Form("official_docs"),
     source_url: Optional[str] = Form(None),
     file: UploadFile = File(...)
 ):
-    """Upload and index a file into the Knowledge Vault."""
+    """Upload and index a file into the Knowledge Vault (supports PDF, MD, TXT, JSON, HTML)."""
     if not knowledge_vault:
         raise HTTPException(status_code=503, detail="Knowledge Vault not initialized")
     
     try:
         # Read file content
         content = await file.read()
-        
-        # Try to decode as text
-        try:
-            text_content = content.decode('utf-8')
-        except UnicodeDecodeError:
-            # Try with different encoding
-            try:
-                text_content = content.decode('latin-1')
-            except:
-                raise HTTPException(status_code=400, detail="Could not decode file as text")
+        filename = file.filename or "document"
         
         try:
             st = KnowledgeSourceType(source_type)
         except ValueError:
             st = KnowledgeSourceType.CUSTOM
         
-        doc = knowledge_vault.index_document(
-            connector_name=connector_name,
-            title=title or file.filename,
-            content=text_content,
-            source_type=st,
-            source_url=source_url
-        )
+        # Handle PDF files
+        if filename.lower().endswith('.pdf'):
+            doc = knowledge_vault.index_pdf(
+                connector_name=connector_name,
+                pdf_content=content,
+                filename=filename,
+                source_type=st
+            )
+        else:
+            # Try to decode as text
+            try:
+                text_content = content.decode('utf-8')
+            except UnicodeDecodeError:
+                try:
+                    text_content = content.decode('latin-1')
+                except:
+                    raise HTTPException(status_code=400, detail="Could not decode file as text")
+            
+            doc = knowledge_vault.index_document(
+                connector_name=connector_name,
+                title=title or filename,
+                content=text_content,
+                source_type=st,
+                source_url=source_url
+            )
         
         return {
             "id": doc.id,
@@ -1061,6 +1070,131 @@ async def list_vault_connectors():
     
     connectors = knowledge_vault.list_connectors()
     return {"connectors": connectors, "count": len(connectors)}
+
+
+# =====================
+# 📚 Bulk Upload Endpoints (500+ documents)
+# =====================
+
+@app.post("/api/vault/bulk-upload")
+async def bulk_upload_files(
+    background_tasks: BackgroundTasks,
+    connector_name: str = Form(...),
+    source_type: str = Form("official_docs"),
+    files: List[UploadFile] = File(...)
+):
+    """
+    Upload multiple files (PDF, MD, TXT) to the Knowledge Vault.
+    
+    Supports up to 500+ files with background processing.
+    Returns a job_id for tracking progress.
+    """
+    if not knowledge_vault:
+        raise HTTPException(status_code=503, detail="Knowledge Vault not initialized")
+    
+    if not files:
+        raise HTTPException(status_code=400, detail="No files provided")
+    
+    try:
+        st = KnowledgeSourceType(source_type)
+    except ValueError:
+        st = KnowledgeSourceType.CUSTOM
+    
+    # Start bulk upload job
+    job_id = knowledge_vault.start_bulk_upload(connector_name, len(files))
+    
+    # Process files in background
+    async def process_files():
+        for file in files:
+            try:
+                content = await file.read()
+                knowledge_vault.process_bulk_file(
+                    job_id=job_id,
+                    file_content=content,
+                    filename=file.filename or "unknown",
+                    source_type=st
+                )
+            except Exception as e:
+                print(f"Error processing {file.filename}: {e}")
+        
+        knowledge_vault.complete_bulk_upload(job_id)
+    
+    background_tasks.add_task(process_files)
+    
+    return {
+        "job_id": job_id,
+        "connector_name": connector_name,
+        "total_files": len(files),
+        "status": "processing",
+        "message": f"Started processing {len(files)} files in background"
+    }
+
+
+@app.get("/api/vault/bulk-upload/{job_id}")
+async def get_bulk_upload_progress(job_id: str):
+    """Get progress for a bulk upload job."""
+    if not knowledge_vault:
+        raise HTTPException(status_code=503, detail="Knowledge Vault not initialized")
+    
+    progress = knowledge_vault.get_bulk_upload_progress(job_id)
+    
+    if not progress:
+        raise HTTPException(status_code=404, detail=f"Job not found: {job_id}")
+    
+    return progress.to_dict()
+
+
+@app.get("/api/vault/bulk-upload")
+async def list_bulk_upload_jobs():
+    """List all bulk upload jobs."""
+    if not knowledge_vault:
+        raise HTTPException(status_code=503, detail="Knowledge Vault not initialized")
+    
+    jobs = knowledge_vault.list_bulk_upload_jobs()
+    return {"jobs": jobs, "count": len(jobs)}
+
+
+@app.post("/api/vault/bulk-upload-sync")
+async def bulk_upload_files_sync(
+    connector_name: str = Form(...),
+    source_type: str = Form("official_docs"),
+    files: List[UploadFile] = File(...)
+):
+    """
+    Upload multiple files synchronously (for smaller batches).
+    
+    Waits for all files to be processed before returning.
+    Recommended for < 50 files.
+    """
+    if not knowledge_vault:
+        raise HTTPException(status_code=503, detail="Knowledge Vault not initialized")
+    
+    if not files:
+        raise HTTPException(status_code=400, detail="No files provided")
+    
+    try:
+        st = KnowledgeSourceType(source_type)
+    except ValueError:
+        st = KnowledgeSourceType.CUSTOM
+    
+    # Process all files
+    job_id = knowledge_vault.start_bulk_upload(connector_name, len(files))
+    
+    for file in files:
+        try:
+            content = await file.read()
+            knowledge_vault.process_bulk_file(
+                job_id=job_id,
+                file_content=content,
+                filename=file.filename or "unknown",
+                source_type=st
+            )
+        except Exception as e:
+            print(f"Error processing {file.filename}: {e}")
+    
+    progress = knowledge_vault.complete_bulk_upload(job_id)
+    
+    return progress.to_dict()
 
 
 if __name__ == "__main__":
