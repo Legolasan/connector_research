@@ -151,17 +151,30 @@ class KnowledgeVault:
         
         # Ensure database is initialized
         db_url = os.getenv("DATABASE_URL")
-        if db_url and not is_database_available():
-            print("📚 Knowledge Vault: Database URL found but not initialized, initializing now...")
-            init_result = init_database()
-            print(f"📚 Knowledge Vault: Database init result: {init_result}")
+        db_available = is_database_available()
         
-        self._pgvector_available = PGVECTOR_AVAILABLE and is_database_available()
+        if db_url and not db_available:
+            print("📚 Knowledge Vault: Database URL found but not initialized, initializing now...")
+            print(f"  DATABASE_URL: {db_url[:50]}..." if len(db_url) > 50 else f"  DATABASE_URL: {db_url}")
+            try:
+                init_result = init_database()
+                print(f"📚 Knowledge Vault: Database init result: {init_result}")
+                db_available = is_database_available()
+            except Exception as e:
+                print(f"📚 Knowledge Vault: Database init exception: {e}")
+                import traceback
+                traceback.print_exc()
+        
+        self._pgvector_available = PGVECTOR_AVAILABLE and db_available
         
         print("📚 Knowledge Vault initialized!")
         print(f"  DATABASE_URL present: {bool(db_url)}")
-        print(f"  Database available: {is_database_available()}")
+        print(f"  Database available: {db_available}")
         print(f"  pgvector available: {self._pgvector_available}")
+        
+        if db_url and not db_available:
+            print("  ⚠ WARNING: DATABASE_URL is set but database is not available!")
+            print("  ⚠ Check Railway logs for database connection errors")
         
         if self._pgvector_available:
             print("  ✓ Using pgvector for semantic search")

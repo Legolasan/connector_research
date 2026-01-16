@@ -16,6 +16,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
+from sqlalchemy import text
 import json
 
 from services.connector_manager import get_connector_manager, ConnectorManager, ConnectorStatus, FivetranUrls, ManualInput
@@ -364,6 +365,25 @@ async def download_research(connector_id: str):
 @app.get("/health")
 async def health_check():
     """Health check endpoint for Railway."""
+    from services.database import is_database_available, get_db_session
+    import os
+    
+    db_url_set = bool(os.getenv("DATABASE_URL"))
+    db_available = is_database_available()
+    
+    # Try to actually connect
+    db_connected = False
+    db_error = None
+    if db_available:
+        try:
+            session = get_db_session()
+            if session:
+                session.execute(text("SELECT 1"))
+                session.close()
+                db_connected = True
+        except Exception as e:
+            db_error = str(e)
+    
     return {
         "status": "healthy",
         "services": {
@@ -371,7 +391,14 @@ async def health_check():
             "github_cloner": github_cloner is not None,
             "research_agent": research_agent is not None,
             "vector_manager": vector_manager is not None,
-            "fivetran_crawler": fivetran_crawler is not None
+            "fivetran_crawler": fivetran_crawler is not None,
+            "knowledge_vault": knowledge_vault is not None
+        },
+        "database": {
+            "url_set": db_url_set,
+            "available": db_available,
+            "connected": db_connected,
+            "error": db_error
         }
     }
 

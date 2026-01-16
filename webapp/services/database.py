@@ -170,6 +170,16 @@ def init_database() -> bool:
             except Exception as e:
                 print(f"⚠ Could not enable pgvector extension: {e}")
         
+        # Test the connection with a simple query
+        try:
+            with engine.connect() as conn:
+                result = conn.execute(text("SELECT 1"))
+                result.fetchone()
+            print("✓ Database connection test successful")
+        except Exception as conn_error:
+            print(f"⚠ Database connection test failed: {conn_error}")
+            raise RuntimeError(f"Database connection failed: {conn_error}") from conn_error
+        
         # Create tables
         Base.metadata.create_all(bind=engine)
         
@@ -177,7 +187,9 @@ def init_database() -> bool:
         return True
         
     except Exception as e:
+        import traceback
         print(f"⚠ Database initialization failed: {e}")
+        print(f"⚠ Traceback: {traceback.format_exc()}")
         engine = None
         SessionLocal = None
         return False
