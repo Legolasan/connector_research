@@ -398,6 +398,118 @@
                 </div>
             </div>
             
+            <!-- Upload Status & Progress -->
+            <div x-show="vaultUploadStatus || bulkUploadProgress" class="p-6 border-b border-white/5">
+                <!-- Single Upload Status -->
+                <div x-show="vaultUploadStatus && !bulkUploadProgress" class="space-y-3">
+                    <div class="flex items-center justify-between">
+                        <h3 class="text-sm font-medium text-gray-300">Upload Status</h3>
+                        <button @click="vaultUploadStatus = null" class="text-gray-500 hover:text-gray-300 text-xs">Clear</button>
+                    </div>
+                    <div :class="vaultUploadStatus?.type === 'success' ? 'bg-green-500/10 border-green-500/20' : vaultUploadStatus?.type === 'error' ? 'bg-red-500/10 border-red-500/20' : 'bg-blue-500/10 border-blue-500/20'" 
+                         class="border rounded-xl p-4">
+                        <div class="flex items-start gap-3">
+                            <span x-show="vaultUploadStatus?.type === 'success'" class="text-xl">✓</span>
+                            <span x-show="vaultUploadStatus?.type === 'error'" class="text-xl">⚠</span>
+                            <span x-show="vaultUploadStatus?.type === 'info'" class="text-xl">ℹ</span>
+                            <div class="flex-1">
+                                <p class="text-sm font-medium" 
+                                   :class="vaultUploadStatus?.type === 'success' ? 'text-green-300' : vaultUploadStatus?.type === 'error' ? 'text-red-300' : 'text-blue-300'"
+                                   x-text="vaultUploadStatus?.title"></p>
+                                <p class="text-xs text-gray-400 mt-1" x-text="vaultUploadStatus?.message"></p>
+                                <div x-show="vaultUploadStatus?.details" class="mt-2 text-xs text-gray-500">
+                                    <p x-text="vaultUploadStatus?.details"></p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Bulk Upload Progress -->
+                <div x-show="bulkUploadProgress" class="space-y-3">
+                    <div class="flex items-center justify-between">
+                        <h3 class="text-sm font-medium text-gray-300">Bulk Upload Progress</h3>
+                        <button x-show="bulkUploadProgress?.status === 'completed' || bulkUploadProgress?.status === 'failed'" 
+                                @click="clearVaultStatus(); loadVaultStats()" 
+                                class="text-gray-500 hover:text-gray-300 text-xs">Clear</button>
+                    </div>
+                    <div class="bg-black/40 rounded-xl p-4 border border-white/10">
+                        <!-- Status Header -->
+                        <div class="flex items-center justify-between mb-3">
+                            <div class="flex items-center gap-2">
+                                <span x-show="bulkUploadProgress?.status === 'processing'" class="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
+                                <span x-show="bulkUploadProgress?.status === 'completed'" class="text-green-400">✓</span>
+                                <span x-show="bulkUploadProgress?.status === 'failed'" class="text-red-400">✗</span>
+                                <span class="text-sm font-medium text-gray-300" x-text="bulkUploadProgress?.status === 'processing' ? 'Processing...' : bulkUploadProgress?.status === 'completed' ? 'Completed' : 'Failed'"></span>
+                            </div>
+                            <span class="text-sm font-bold" 
+                                  :class="bulkUploadProgress?.status === 'completed' ? 'text-green-400' : bulkUploadProgress?.status === 'failed' ? 'text-red-400' : 'text-blue-400'"
+                                  x-text="(bulkUploadProgress?.percentage || 0).toFixed(1) + '%'"></span>
+                        </div>
+                        
+                        <!-- Progress Bar -->
+                        <div class="w-full bg-gray-700 rounded-full h-3 mb-3">
+                            <div class="h-3 rounded-full transition-all duration-300" 
+                                 :class="bulkUploadProgress?.status === 'completed' ? 'bg-green-500' : bulkUploadProgress?.status === 'failed' ? 'bg-red-500' : 'bg-blue-500'"
+                                 :style="'width: ' + (bulkUploadProgress?.percentage || 0) + '%'"></div>
+                        </div>
+                        
+                        <!-- Stats -->
+                        <div class="grid grid-cols-4 gap-4 text-xs mb-3">
+                            <div>
+                                <div class="text-gray-500">Processed</div>
+                                <div class="text-white font-medium" x-text="(bulkUploadProgress?.processed_files || 0) + '/' + (bulkUploadProgress?.total_files || 0)"></div>
+                            </div>
+                            <div>
+                                <div class="text-gray-500">Successful</div>
+                                <div class="text-green-400 font-medium" x-text="bulkUploadProgress?.successful_files || 0"></div>
+                            </div>
+                            <div>
+                                <div class="text-gray-500">Failed</div>
+                                <div class="text-red-400 font-medium" x-text="bulkUploadProgress?.failed_files || 0"></div>
+                            </div>
+                            <div>
+                                <div class="text-gray-500">Chunks</div>
+                                <div class="text-amber-400 font-medium" x-text="bulkUploadProgress?.total_chunks || 0"></div>
+                            </div>
+                        </div>
+                        
+                        <!-- Current File -->
+                        <div x-show="bulkUploadProgress?.current_file && bulkUploadProgress?.status === 'processing'" 
+                             class="text-xs text-gray-400 mb-3 truncate bg-black/30 px-3 py-2 rounded">
+                            <span class="text-gray-500">Processing:</span> <span x-text="bulkUploadProgress?.current_file"></span>
+                        </div>
+                        
+                        <!-- Errors -->
+                        <div x-show="bulkUploadProgress?.errors && bulkUploadProgress.errors.length > 0" class="mt-3">
+                            <div class="flex items-center justify-between mb-2">
+                                <span class="text-xs font-medium text-red-400">⚠️ Errors (<span x-text="bulkUploadProgress?.failed_files || 0"></span>)</span>
+                                <button @click="bulkUploadProgress.errorsExpanded = !bulkUploadProgress.errorsExpanded" 
+                                        class="text-xs text-gray-500 hover:text-gray-300">
+                                    <span x-text="bulkUploadProgress.errorsExpanded ? 'Hide' : 'Show'"></span>
+                                </button>
+                            </div>
+                            <div x-show="bulkUploadProgress.errorsExpanded" 
+                                 class="max-h-40 overflow-auto bg-red-500/10 border border-red-500/20 rounded p-3 space-y-1">
+                                <template x-for="(error, index) in (bulkUploadProgress?.errors || [])" :key="index">
+                                    <div class="text-xs text-red-300/80 font-mono break-words" x-text="error"></div>
+                                </template>
+                            </div>
+                        </div>
+                        
+                        <!-- Completion Summary -->
+                        <div x-show="bulkUploadProgress?.status === 'completed'" 
+                             class="mt-3 pt-3 border-t border-white/10">
+                            <div class="text-xs text-gray-400 space-y-1">
+                                <p><span class="text-gray-500">Job ID:</span> <span class="text-white font-mono" x-text="bulkUploadProgress?.job_id"></span></p>
+                                <p><span class="text-gray-500">Started:</span> <span class="text-white" x-text="new Date(bulkUploadProgress?.started_at).toLocaleString()"></span></p>
+                                <p x-show="bulkUploadProgress?.completed_at"><span class="text-gray-500">Completed:</span> <span class="text-white" x-text="new Date(bulkUploadProgress?.completed_at).toLocaleString()"></span></p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
             <!-- Connector Knowledge List -->
             <div class="flex-1 overflow-auto p-6">
                 <div class="max-w-4xl mx-auto space-y-4">
@@ -647,7 +759,7 @@
                 </div>
                 
                 <div class="flex items-center justify-end gap-3 pt-4 border-t border-white/10">
-                    <button type="button" @click="showVaultUploadModal = false; bulkUploadProgress = null" class="px-6 py-3 text-gray-400 hover:text-white transition-colors">Cancel</button>
+                    <button type="button" @click="showVaultUploadModal = false" class="px-6 py-3 text-gray-400 hover:text-white transition-colors">Cancel</button>
                     <button type="submit" 
                             :disabled="!vaultUpload.connector_name || isUploadingVault || (vaultUploadType === 'bulk' && (!vaultUpload.files || vaultUpload.files.length === 0))"
                             class="px-6 py-3 bg-amber-600 hover:bg-amber-500 disabled:opacity-50 disabled:cursor-not-allowed rounded-xl font-medium transition-colors flex items-center gap-2"

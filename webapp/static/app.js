@@ -50,6 +50,7 @@ function dashboard() {
         },
         bulkUploadProgress: null,  // Progress tracking for bulk uploads
         bulkUploadJobId: null,
+        vaultUploadStatus: null,  // Status messages for single uploads
 
         // Initialize
         async init() {
@@ -469,7 +470,11 @@ function dashboard() {
                 if (this.vaultUploadType === 'text') {
                     // Text upload
                     if (!this.vaultUpload.content) {
-                        alert('Please enter documentation content');
+                        this.vaultUploadStatus = {
+                            type: 'error',
+                            title: 'Validation Error',
+                            message: 'Please enter documentation content'
+                        };
                         this.isUploadingVault = false;
                         return;
                     }
@@ -488,7 +493,11 @@ function dashboard() {
                 } else if (this.vaultUploadType === 'url') {
                     // URL fetch
                     if (!this.vaultUpload.url) {
-                        alert('Please enter a documentation URL');
+                        this.vaultUploadStatus = {
+                            type: 'error',
+                            title: 'Validation Error',
+                            message: 'Please enter a documentation URL'
+                        };
                         this.isUploadingVault = false;
                         return;
                     }
@@ -506,7 +515,11 @@ function dashboard() {
                 } else if (this.vaultUploadType === 'file') {
                     // Single file upload
                     if (!this.vaultUpload.file) {
-                        alert('Please select a file');
+                        this.vaultUploadStatus = {
+                            type: 'error',
+                            title: 'Validation Error',
+                            message: 'Please select a file'
+                        };
                         this.isUploadingVault = false;
                         return;
                     }
@@ -525,7 +538,11 @@ function dashboard() {
                 } else if (this.vaultUploadType === 'bulk') {
                     // Bulk upload (500+ files)
                     if (!this.vaultUpload.files || this.vaultUpload.files.length === 0) {
-                        alert('Please select files to upload');
+                        this.vaultUploadStatus = {
+                            type: 'error',
+                            title: 'Validation Error',
+                            message: 'Please select files to upload'
+                        };
                         this.isUploadingVault = false;
                         return;
                     }
@@ -549,17 +566,43 @@ function dashboard() {
                         const data = await response.json();
                         this.bulkUploadJobId = data.job_id;
                         
+                        // Initialize progress object
+                        this.bulkUploadProgress = {
+                            job_id: data.job_id,
+                            connector_name: data.connector_name,
+                            total_files: data.total_files,
+                            processed_files: 0,
+                            successful_files: 0,
+                            failed_files: 0,
+                            total_chunks: 0,
+                            status: 'processing',
+                            current_file: '',
+                            errors: [],
+                            errorsExpanded: false
+                        };
+                        
                         // Start polling for progress
                         this.pollBulkUploadProgress();
                         
-                        alert(`Started uploading ${data.total_files} files in background. You can track progress here.`);
-                        return; // Don't close modal yet
+                        // Close modal but keep progress visible
+                        this.showVaultUploadModal = false;
+                        this.vaultUploadStatus = {
+                            type: 'info',
+                            title: 'Bulk Upload Started',
+                            message: `Processing ${data.total_files} files in background. Track progress below.`
+                        };
+                        return;
                     }
                 }
                 
                 if (response && response.ok) {
                     const data = await response.json();
-                    alert(`Successfully indexed ${data.chunk_count || data.total_chunks || 0} chunks for ${data.connector_name}!`);
+                    this.vaultUploadStatus = {
+                        type: 'success',
+                        title: 'Upload Successful',
+                        message: `Successfully indexed ${data.chunk_count || data.total_chunks || 0} chunks for ${data.connector_name}!`,
+                        details: `Connector: ${data.connector_name} | Chunks: ${data.chunk_count || data.total_chunks || 0}`
+                    };
                     
                     // Reset form
                     this.resetVaultUploadForm();
@@ -567,13 +610,30 @@ function dashboard() {
                     
                     // Reload stats
                     await this.loadVaultStats();
+                    
+                    // Auto-clear success message after 5 seconds
+                    setTimeout(() => {
+                        if (this.vaultUploadStatus?.type === 'success') {
+                            this.vaultUploadStatus = null;
+                        }
+                    }, 5000);
                 } else if (response) {
                     const error = await response.json();
-                    alert('Error: ' + (error.detail || 'Failed to index documentation'));
+                    this.vaultUploadStatus = {
+                        type: 'error',
+                        title: 'Upload Failed',
+                        message: error.detail || 'Failed to index documentation',
+                        details: error.detail || 'Unknown error occurred'
+                    };
                 }
             } catch (error) {
                 console.error('Vault upload error:', error);
-                alert('Error: ' + error.message);
+                this.vaultUploadStatus = {
+                    type: 'error',
+                    title: 'Upload Error',
+                    message: error.message || 'An unexpected error occurred',
+                    details: error.stack || 'Please check the console for more details'
+                };
             } finally {
                 this.isUploadingVault = false;
             }
@@ -589,6 +649,13 @@ function dashboard() {
                 file: null,
                 files: null
             };
+            // Don't clear bulkUploadProgress - let user see final status
+            // Only clear if explicitly requested
+            this.bulkUploadJobId = null;
+        },
+        
+        clearVaultStatus() {
+            this.vaultUploadStatus = null;
             this.bulkUploadProgress = null;
             this.bulkUploadJobId = null;
         },
@@ -599,29 +666,64 @@ function dashboard() {
             try {
                 const response = await fetch(`/api/vault/bulk-upload/${this.bulkUploadJobId}`);
                 if (response.ok) {
-                    this.bulkUploadProgress = await response.json();
+                    const progressData = await response.json();
+                    
+                    // Merge with existing progress to preserve errorsExpanded
+                    // Auto-expand errors if there are failures
+                    const hasErrors = progressData.errors && progressData.errors.length > 0;
+                    this.bulkUploadProgress = {
+                        ...progressData,
+                        errorsExpanded: this.bulkUploadProgress?.errorsExpanded || hasErrors
+                    };
+                    
+                    // Scroll to progress section if it's visible
+                    this.$nextTick(() => {
+                        const progressSection = document.querySelector('[x-show*="bulkUploadProgress"]');
+                        if (progressSection && this.bulkUploadProgress.status === 'processing') {
+                            progressSection.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                        }
+                    });
                     
                     // Continue polling if not completed
                     if (this.bulkUploadProgress.status === 'processing') {
                         setTimeout(() => this.pollBulkUploadProgress(), 1000);
                     } else if (this.bulkUploadProgress.status === 'completed') {
-                        let message = `Bulk upload complete!\n\nProcessed: ${this.bulkUploadProgress.processed_files}/${this.bulkUploadProgress.total_files}\nSuccessful: ${this.bulkUploadProgress.successful_files}\nFailed: ${this.bulkUploadProgress.failed_files}\nTotal chunks: ${this.bulkUploadProgress.total_chunks}`;
+                        // Update status message
+                        this.vaultUploadStatus = {
+                            type: this.bulkUploadProgress.failed_files > 0 ? 'error' : 'success',
+                            title: this.bulkUploadProgress.failed_files > 0 
+                                ? 'Bulk Upload Completed with Errors' 
+                                : 'Bulk Upload Completed',
+                            message: `Processed ${this.bulkUploadProgress.processed_files}/${this.bulkUploadProgress.total_files} files. ${this.bulkUploadProgress.successful_files} successful, ${this.bulkUploadProgress.failed_files} failed.`,
+                            details: `Total chunks created: ${this.bulkUploadProgress.total_chunks}`
+                        };
                         
-                        // Show errors if any
-                        if (this.bulkUploadProgress.errors && this.bulkUploadProgress.errors.length > 0) {
-                            message += `\n\n⚠️ Errors:\n${this.bulkUploadProgress.errors.join('\n')}`;
-                        }
-                        
-                        alert(message);
-                        
-                        // Reset and close
-                        this.resetVaultUploadForm();
-                        this.showVaultUploadModal = false;
+                        // Reload stats
                         await this.loadVaultStats();
+                    } else if (this.bulkUploadProgress.status === 'failed') {
+                        this.vaultUploadStatus = {
+                            type: 'error',
+                            title: 'Bulk Upload Failed',
+                            message: 'The bulk upload job failed. Check errors below for details.',
+                            details: this.bulkUploadProgress.errors?.join('; ') || 'Unknown error'
+                        };
                     }
+                } else {
+                    // Stop polling on error
+                    this.vaultUploadStatus = {
+                        type: 'error',
+                        title: 'Progress Check Failed',
+                        message: 'Unable to fetch upload progress. The upload may still be processing.',
+                        details: `Job ID: ${this.bulkUploadJobId}`
+                    };
                 }
             } catch (error) {
                 console.error('Error polling progress:', error);
+                this.vaultUploadStatus = {
+                    type: 'error',
+                    title: 'Progress Check Error',
+                    message: 'Error checking upload progress: ' + error.message
+                };
             }
         },
         
