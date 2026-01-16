@@ -697,7 +697,10 @@ async def generate_research(connector_id: str, background_tasks: BackgroundTasks
         except asyncio.CancelledError:
             connector_manager.update_connector(connector_id, status=ConnectorStatus.CANCELLED.value)
         except Exception as e:
+            import traceback
+            error_details = traceback.format_exc()
             print(f"Research generation failed: {e}")
+            print(f"Full traceback:\n{error_details}")
             connector_manager.update_connector(connector_id, status=ConnectorStatus.FAILED.value)
         finally:
             if connector_id in _running_research_tasks:

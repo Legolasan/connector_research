@@ -2199,7 +2199,21 @@ Generate comprehensive markdown content for this section. Include:
                 max_tokens=3000
             )
             
-            content = response.choices[0].message.content
+            # Validate response structure
+            if not response or not hasattr(response, 'choices') or not response.choices:
+                raise ValueError("OpenAI API returned empty response or no choices")
+            
+            if not response.choices[0] or not hasattr(response.choices[0], 'message'):
+                raise ValueError("OpenAI API response missing message")
+            
+            message = response.choices[0].message
+            if not hasattr(message, 'content') or message.content is None:
+                raise ValueError("OpenAI API response missing content")
+            
+            content = message.content.strip()
+            
+            if not content:
+                raise ValueError("OpenAI API returned empty content")
             
             # Phase emoji mapping
             phase_emojis = {
@@ -2238,6 +2252,10 @@ Generate comprehensive markdown content for this section. Include:
             return formatted
             
         except Exception as e:
+            import traceback
+            error_trace = traceback.format_exc()
+            print(f"Error generating section {section.number} ({section.name}): {e}")
+            print(f"Traceback:\n{error_trace}")
             return f"""
 
 ---
@@ -2245,6 +2263,8 @@ Generate comprehensive markdown content for this section. Include:
 ## {section.number}. {section.name}
 
 **Error generating section:** {str(e)}
+
+*This section could not be generated due to an error. Please try regenerating the research.*
 
 ---
 """
