@@ -56,6 +56,9 @@ class FivetranSchemaObject:
     parent: Optional[str] = None
     permissions: List[str] = field(default_factory=list)
     description: str = ""
+    cursor_field: str = ""  # Field used for incremental sync (e.g., updated_at)
+    primary_key: str = ""  # Primary key field
+    is_supported: bool = True  # Whether Fivetran supports this object
     
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -63,7 +66,10 @@ class FivetranSchemaObject:
             'sync_mode': self.sync_mode,
             'parent': self.parent,
             'permissions': self.permissions,
-            'description': self.description[:500]
+            'description': self.description[:500],
+            'cursor_field': self.cursor_field,
+            'primary_key': self.primary_key,
+            'is_supported': self.is_supported
         }
 
 
@@ -333,6 +339,13 @@ class FivetranCrawler:
         """
         context = FivetranSchemaContext(raw_content=content)
         
+        # Common cursor field names
+        CURSOR_FIELDS = ['updated_at', 'modified_at', 'last_modified', 'modified_date', 
+                         'updated_date', 'timestamp', 'created_at', 'sync_time', 'last_updated']
+        
+        # Common primary key patterns
+        PK_PATTERNS = ['_id', 'id', '_pk', 'key', 'uuid']
+        
         # Extract table/object names from the content
         # Look for patterns like "table_name" or "TableName" in table rows or lists
         table_pattern = r'\|\s*([a-z_]+[a-z0-9_]*)\s*\|'
@@ -341,22 +354,55 @@ class FivetranCrawler:
         # Also look for headings that might be table names
         heading_tables = re.findall(r'##\s*([a-z_]+[a-z0-9_]*)\s*\n', content.lower())
         
-        all_tables = list(set(tables + heading_tables))
+        # Look for table names in bold or links
+        bold_tables = re.findall(r'\*\*([a-z_]+[a-z0-9_]*)\*\*', content.lower())
+        
+        all_tables = list(set(tables + heading_tables + bold_tables))
+        
+        # Filter out common non-table words
+        excluded_words = {'table', 'name', 'type', 'description', 'column', 'field', 
+                          'value', 'data', 'sync', 'mode', 'status', 'boolean', 'string',
+                          'integer', 'timestamp', 'date', 'time', 'primary', 'foreign'}
         
         for table_name in all_tables:
-            if len(table_name) < 3 or table_name in ['table', 'name', 'type', 'description', 'column']:
+            if len(table_name) < 3 or table_name in excluded_words:
                 continue
             
             obj = FivetranSchemaObject(name=table_name)
             
+            # Get the context around this table name (for extracting details)
+            table_context = self._get_table_context(content, table_name)
+            table_context_lower = table_context.lower()
+            
             # Try to find sync mode
-            sync_pattern = rf'{table_name}[^\n]*(?:incremental|full)'
-            sync_match = re.search(sync_pattern, content.lower())
-            if sync_match:
-                if 'incremental' in sync_match.group(0):
-                    obj.sync_mode = 'incremental'
-                elif 'full' in sync_match.group(0):
-                    obj.sync_mode = 'full_load'
+            if 'incremental' in table_context_lower:
+                obj.sync_mode = 'incremental'
+            elif 'full' in table_context_lower or 'full_load' in table_context_lower:
+                obj.sync_mode = 'full_load'
+            else:
+                # Default assumption based on common patterns
+                obj.sync_mode = 'incremental'  # Most objects support incremental
+            
+            # Try to find cursor field
+            for cursor in CURSOR_FIELDS:
+                if cursor in table_context_lower:
+                    obj.cursor_field = cursor
+                    break
+            
+            # If incremental but no cursor found, try to infer
+            if obj.sync_mode == 'incremental' and not obj.cursor_field:
+                obj.cursor_field = 'updated_at'  # Common default
+            
+            # Try to find primary key
+            pk_match = re.search(rf'{table_name}[^\n]*(?:primary\s*key|pk|id)[:\s]*([a-z_]+)', table_context_lower)
+            if pk_match:
+                obj.primary_key = pk_match.group(1)
+            else:
+                # Default to common patterns
+                if f'{table_name}_id' in table_context_lower:
+                    obj.primary_key = f'{table_name}_id'
+                else:
+                    obj.primary_key = 'id'  # Common default
             
             context.objects.append(obj)
             context.supported_objects.append(table_name)
@@ -364,8 +410,9 @@ class FivetranCrawler:
         # Extract parent-child relationships
         # Look for patterns like "parent_table → child_table" or "parent: X, child: Y"
         rel_patterns = [
-            r'(\w+)\s*(?:→|->|is parent of|has many)\s*(\w+)',
+            r'(\w+)\s*(?:→|->|is parent of|has many|contains)\s*(\w+)',
             r'parent[:\s]+(\w+)[,\s]+child[:\s]+(\w+)',
+            r'(\w+)\s*table\s*(?:has|contains)\s*(\w+)',
         ]
         
         for pattern in rel_patterns:
@@ -373,25 +420,81 @@ class FivetranCrawler:
                 parent = match.group(1).lower()
                 child = match.group(2).lower()
                 if parent != child and len(parent) > 2 and len(child) > 2:
-                    context.parent_child_relationships.append((parent, child))
+                    if parent not in excluded_words and child not in excluded_words:
+                        context.parent_child_relationships.append((parent, child))
+        
+        # Update objects with parent info from relationships
+        parent_map = {child: parent for parent, child in context.parent_child_relationships}
+        for obj in context.objects:
+            if obj.name in parent_map:
+                obj.parent = parent_map[obj.name]
         
         # Extract unsupported objects
-        unsupported_section = self._extract_section(content, ['not supported', 'unsupported', 'excluded'])
+        unsupported_section = self._extract_section(content, ['not supported', 'unsupported', 'excluded', 'not available'])
         if unsupported_section:
             unsupported = re.findall(r'[-•]\s*([a-z_]+[a-z0-9_]*)', unsupported_section.lower())
-            context.unsupported_objects = [u.strip() for u in unsupported if len(u.strip()) > 2]
+            context.unsupported_objects = [u.strip() for u in unsupported 
+                                           if len(u.strip()) > 2 and u.strip() not in excluded_words]
+            
+            # Mark objects as unsupported
+            for obj in context.objects:
+                if obj.name in context.unsupported_objects:
+                    obj.is_supported = False
         
         # Extract permissions
-        perm_section = self._extract_section(content, ['permission', 'scope', 'role', 'access'])
+        perm_section = self._extract_section(content, ['permission', 'scope', 'role', 'access', 'require'])
         if perm_section:
-            perms = re.findall(r'(?:permission|scope|role)[:\s]+([^\n,]+)', perm_section, re.IGNORECASE)
+            # Look for permission patterns like "read:accounts" or "accounts.read"
+            perms = re.findall(r'([a-z_]+[:.][a-z_]+)', perm_section.lower())
             for perm in perms:
                 perm = perm.strip()
+                if perm and len(perm) > 4:
+                    # Try to associate with an object
+                    for obj in context.objects:
+                        if obj.name in perm:
+                            obj.permissions.append(perm)
+                            if obj.name not in context.permissions_required:
+                                context.permissions_required[obj.name] = []
+                            context.permissions_required[obj.name].append(perm)
+                            break
+                    else:
+                        # General permission
+                        if 'general' not in context.permissions_required:
+                            context.permissions_required['general'] = []
+                        context.permissions_required['general'].append(perm)
+            
+            # Also look for more general permission patterns
+            general_perms = re.findall(r'(?:permission|scope|role)[:\s]+([^\n,]+)', perm_section, re.IGNORECASE)
+            for perm in general_perms:
+                perm = perm.strip()
                 if perm and len(perm) > 2:
-                    context.permissions_required['general'] = context.permissions_required.get('general', [])
+                    if 'general' not in context.permissions_required:
+                        context.permissions_required['general'] = []
                     context.permissions_required['general'].append(perm)
         
         return context
+    
+    def _get_table_context(self, content: str, table_name: str, context_size: int = 500) -> str:
+        """Get the context around a table name in the content.
+        
+        Args:
+            content: Full content
+            table_name: Table name to find
+            context_size: Number of characters of context to extract
+            
+        Returns:
+            Context string around the table name
+        """
+        content_lower = content.lower()
+        idx = content_lower.find(table_name)
+        
+        if idx == -1:
+            return ""
+        
+        start = max(0, idx - 100)
+        end = min(len(content), idx + context_size)
+        
+        return content[start:end]
     
     def _extract_section(self, content: str, keywords: List[str]) -> str:
         """Extract a section of content based on keywords.

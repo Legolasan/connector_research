@@ -1,6 +1,6 @@
 """
 Research Agent Service
-Auto-generates 18-section connector research documents.
+Auto-generates 19-section connector research documents.
 """
 
 import os
@@ -26,7 +26,7 @@ class ResearchSection:
     requires_code_analysis: bool = False
 
 
-# Define all 18 sections
+# Define all 19 sections
 RESEARCH_SECTIONS = [
     # Phase 1: Understand the Platform
     ResearchSection(1, "Product Overview", 1, "Understand the Platform", [
@@ -150,6 +150,18 @@ RESEARCH_SECTIONS = [
         "What pagination issues commonly occur?",
         "What timeout and rate limit issues occur?"
     ]),
+    
+    # Phase 7: Object Catalog
+    ResearchSection(19, "Available Objects & Replication Guide", 7, "Object Catalog", [
+        "List ALL available objects/entities that can be extracted from {connector}. Create a comprehensive catalog table.",
+        "For each object, identify: Primary Key field, Cursor Field for incremental sync (e.g., updated_at, modified_date), Parent object if this is a child entity.",
+        "For each object, specify the exact extraction method: REST endpoint (e.g., GET /v1/accounts), GraphQL query, SOAP operation, SDK method, or other mechanism.",
+        "For each object, list required permissions/scopes needed to access that object.",
+        "Indicate if each object is supported by Fivetran (if Fivetran context is available). Mark with checkmark or 'Yes'/'No'.",
+        "Categorize objects into: Full Load Only (no reliable cursor), Incremental (has cursor field), CDC-capable (real-time change tracking).",
+        "Provide a sample Python code example showing how to extract records from 2-3 key objects with pagination.",
+        "Note any rate limits, pagination limits, or volume considerations specific to high-volume objects."
+    ], requires_fivetran=True, requires_code_analysis=True),
 ]
 
 
@@ -159,7 +171,7 @@ class ResearchProgress:
     connector_id: str
     connector_name: str
     current_section: int = 0
-    total_sections: int = 18
+    total_sections: int = 19
     status: str = "idle"  # idle, running, completed, failed, cancelled
     sections_completed: List[int] = field(default_factory=list)
     current_content: str = ""
@@ -340,6 +352,23 @@ class ResearchAgent:
                 for cfg in impl['config_patterns'][:10]:
                     parts.append(f"  - {cfg}")
         
+        # Section 19: Available Objects & Replication Guide
+        elif section_number == 19:
+            if sdk.get('data_types'):
+                parts.append(f"**SDK Data Types/Objects ({len(sdk['data_types'])} found):**\n{', '.join(sdk['data_types'][:100])}")
+            if impl.get('models'):
+                parts.append(f"**Implementation Models ({len(impl['models'])} found):**\n{', '.join(impl['models'][:100])}")
+            if docs.get('objects_schema'):
+                parts.append(f"**From Public Documentation - Objects/Schema:**\n{docs['objects_schema'][:3000]}")
+            if docs.get('endpoints_list'):
+                parts.append(f"**Documented Endpoints ({len(docs['endpoints_list'])} found):**")
+                for ep in docs['endpoints_list'][:40]:
+                    parts.append(f"  - {ep}")
+            if impl.get('api_calls'):
+                parts.append(f"**API Calls Found in Implementation:**")
+                for call in impl['api_calls'][:20]:
+                    parts.append(f"  - {call[:200]}")
+        
         # For other sections, provide general context if available
         else:
             if docs.get('raw_content') and section_number in [1, 2, 3]:
@@ -438,6 +467,47 @@ class ResearchAgent:
                 for lim in overview['sync_limitations'][:10]:
                     parts.append(f"  - {lim}")
         
+        # Section 19: Available Objects & Replication Guide - Comprehensive object catalog
+        elif section_number == 19:
+            # Provide detailed Fivetran object information for the catalog table
+            if schema.get('supported_objects'):
+                parts.append(f"**Fivetran Supported Objects ({len(schema['supported_objects'])} total):**")
+                parts.append(f"Objects: {', '.join(schema['supported_objects'])}")
+            
+            if schema.get('unsupported_objects'):
+                parts.append(f"\n**Fivetran Unsupported Objects ({len(schema['unsupported_objects'])} total):**")
+                parts.append(f"Objects: {', '.join(schema['unsupported_objects'])}")
+            
+            if schema.get('objects'):
+                # Build detailed object info for the table
+                parts.append(f"\n**Fivetran Object Details (for table columns):**")
+                for obj in schema['objects'][:50]:
+                    obj_name = obj.get('name', 'Unknown')
+                    sync_mode = obj.get('sync_mode', 'Unknown')
+                    parent = obj.get('parent', '-')
+                    cursor = obj.get('cursor_field', '-')
+                    parts.append(f"  - {obj_name}: sync_mode={sync_mode}, parent={parent}, cursor={cursor}")
+            
+            if schema.get('parent_child_relationships'):
+                parts.append(f"\n**Fivetran Parent-Child Relationships:**")
+                for parent, child in schema['parent_child_relationships'][:30]:
+                    parts.append(f"  - {parent} → {child}")
+            
+            if schema.get('permissions_required'):
+                parts.append(f"\n**Fivetran Permissions by Object:**")
+                for obj, perms in list(schema['permissions_required'].items())[:20]:
+                    parts.append(f"  - {obj}: {', '.join(perms)}")
+            
+            # Include overview sync info
+            if overview.get('incremental_sync_details'):
+                parts.append(f"\n**Fivetran Incremental Sync Details:**")
+                parts.append(overview['incremental_sync_details'][:1500])
+            
+            if overview.get('supported_features'):
+                features = [f"{k.replace('_', ' ').title()}: {'Yes' if v else 'No'}" 
+                           for k, v in overview['supported_features'].items()]
+                parts.append(f"\n**Fivetran Supported Features:**\n{', '.join(features)}")
+        
         return "\n\n".join(parts) if parts else ""
     
     async def _generate_section(
@@ -469,7 +539,35 @@ class ResearchAgent:
         # Build the prompt
         prompts_text = "\n".join(f"- {p.format(connector=connector_name)}" for p in section.prompts)
         
-        system_prompt = """You are an expert technical writer specializing in data integration and ETL connector development.
+        # Special system prompt for Section 19 (Object Catalog)
+        if section.number == 19:
+            system_prompt = """You are an expert technical writer specializing in data integration and ETL connector development.
+Your task is to create a comprehensive Object Catalog for connector research.
+
+CRITICAL OUTPUT FORMAT REQUIREMENTS:
+1. Start with a markdown table listing ALL available objects with these exact columns:
+   | Object | Extraction Method | Primary Key | Cursor Field | Parent | Permissions | Fivetran Support |
+   
+2. The table should include:
+   - Object: Name of the entity/object (e.g., accounts, contacts, orders)
+   - Extraction Method: Exact API endpoint or method (e.g., "GET /v1/accounts", "GraphQL query accounts", "SOAP GetAccounts")
+   - Primary Key: The unique identifier field (e.g., id, account_id)
+   - Cursor Field: Field for incremental sync (e.g., updated_at, modified_date) or "-" if full load only
+   - Parent: Parent object name if this is a child entity, or "-" if top-level
+   - Permissions: Required scopes/permissions (e.g., read:accounts, accounts.read)
+   - Fivetran Support: "✓" if supported by Fivetran, "✗" if not, or "?" if unknown
+
+3. After the table, include:
+   - Replication Strategy Notes: List objects by category (Full Load Only, Incremental, CDC-capable)
+   - Sample Extraction Code: Python code example for 2-3 key objects with pagination
+   - Volume Considerations: Rate limits or pagination specific to high-volume objects
+
+4. Include inline citations like [web:1], [web:2] referencing web search results
+5. If Fivetran context is provided, prioritize that for the Fivetran Support column
+6. List at least 15-30 objects if available, or all objects if fewer exist
+"""
+        else:
+            system_prompt = """You are an expert technical writer specializing in data integration and ETL connector development.
 Your task is to write detailed, production-grade documentation for connector research.
 
 Requirements:
@@ -487,7 +585,51 @@ Requirements:
         if structured_context:
             section_context = self._build_section_context(section.number, structured_context)
 
-        user_prompt = f"""Generate Section {section.number}: {section.name} for the {connector_name} connector research document.
+        # Special user prompt for Section 19 (Object Catalog)
+        if section.number == 19:
+            user_prompt = f"""Generate Section {section.number}: {section.name} for the {connector_name} connector research document.
+
+Connector Type: {connector_type}
+Phase: {section.phase_name}
+
+IMPORTANT: This section MUST start with a comprehensive markdown table of ALL available objects.
+
+Questions to answer:
+{prompts_text}
+
+Web Search Results:
+{web_results}
+
+{f"GitHub Code Analysis Context:{chr(10)}{github_context}" if github_context else ""}
+{f"Fivetran Comparison Context (use for Fivetran Support column):{chr(10)}{fivetran_context}" if fivetran_context else ""}
+{f"Structured Repository Context:{chr(10)}{section_context}" if section_context else ""}
+
+OUTPUT FORMAT REQUIRED:
+
+### 19.1 Object Catalog Table
+
+| Object | Extraction Method | Primary Key | Cursor Field | Parent | Permissions | Fivetran Support |
+|--------|-------------------|-------------|--------------|--------|-------------|------------------|
+| (list all objects here) |
+
+### 19.2 Replication Strategy Notes
+
+**Full Load Objects:** (list objects with no cursor field)
+**Incremental Objects:** (list objects with cursor fields)
+**CDC-Capable Objects:** (list objects with real-time change tracking if any)
+
+### 19.3 Sample Extraction Code
+
+```python
+# Python code example for extracting 2-3 key objects with pagination
+```
+
+### 19.4 Volume Considerations
+
+(Rate limits, pagination limits, high-volume object notes)
+"""
+        else:
+            user_prompt = f"""Generate Section {section.number}: {section.name} for the {connector_name} connector research document.
 
 Connector Type: {connector_type}
 Phase: {section.phase_name}
