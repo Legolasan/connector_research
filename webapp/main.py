@@ -657,10 +657,23 @@ async def generate_research(connector_id: str, background_tasks: BackgroundTasks
             
             # Generate research
             def on_progress(progress):
+                # Extract section name from current_content
+                # Format is usually "Generating Section X: Section Name..."
+                section_name = ""
+                if progress.current_content:
+                    # Try to extract section name from the format
+                    import re
+                    match = re.search(r'Section \d+: (.+?)(?:\.\.\.|$)', progress.current_content)
+                    if match:
+                        section_name = match.group(1).strip()
+                    else:
+                        # Fallback to first 50 chars
+                        section_name = progress.current_content[:50].strip()
+                
                 connector_manager.update_progress(
                     connector_id,
                     section=progress.current_section,
-                    section_name=progress.current_content[:50] if progress.current_content else "",
+                    section_name=section_name,
                     completed=(progress.current_section in progress.sections_completed),
                     total_sections=progress.total_sections,
                     discovered_methods=progress.discovered_methods if hasattr(progress, 'discovered_methods') else None

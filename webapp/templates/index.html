@@ -114,65 +114,76 @@
                 <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                     <!-- Connector Cards -->
                     <template x-for="connector in connectors" :key="connector.id">
-                        <div class="bg-black/30 border border-white/5 rounded-2xl p-5 hover:border-indigo-500/30 transition-all"
+                        <div class="bg-black/30 border border-white/5 rounded-2xl p-5 hover:border-indigo-500/30 transition-all flex flex-col"
                              :class="{
                                  'border-l-4 border-l-green-500/50': connector.status === 'complete',
                                  'border-l-4 border-l-yellow-500/50': connector.status === 'researching',
                                  'border-l-4 border-l-blue-500/50': connector.status === 'cloning',
                                  'border-l-4 border-l-gray-500/50': connector.status === 'not_started' || connector.status === 'pending'
                              }">
-                            <div class="flex items-start justify-between mb-4">
-                                <div class="flex items-center gap-3">
-                                    <div class="w-12 h-12 rounded-xl bg-gradient-to-br from-indigo-600 to-purple-600 flex items-center justify-center text-xl font-bold text-white"
+                            <!-- Header -->
+                            <div class="flex items-start justify-between mb-4 flex-shrink-0">
+                                <div class="flex items-center gap-3 min-w-0 flex-1">
+                                    <div class="w-12 h-12 rounded-xl bg-gradient-to-br from-indigo-600 to-purple-600 flex items-center justify-center text-xl font-bold text-white flex-shrink-0"
                                          x-text="connector.name.substring(0,2).toUpperCase()">
                                     </div>
-                                    <div>
-                                        <div class="font-semibold text-white" x-text="connector.name"></div>
-                                        <div class="text-sm text-gray-400" x-text="connector.connector_type.replace('_', ' ').toUpperCase()"></div>
+                                    <div class="min-w-0 flex-1">
+                                        <div class="font-semibold text-white truncate" x-text="connector.name"></div>
+                                        <div class="text-sm text-gray-400" x-text="(connector.connector_type || 'AUTO').replace('_', ' ').toUpperCase()"></div>
                                     </div>
                                 </div>
-                                <span class="px-2 py-1 text-xs rounded-lg border"
+                                <span class="px-2 py-1 text-xs rounded-lg border flex-shrink-0 ml-2"
                                       :class="{
                                           'bg-green-500/20 text-green-400 border-green-500/30': connector.status === 'complete',
                                           'bg-yellow-500/20 text-yellow-400 border-yellow-500/30': connector.status === 'researching',
                                           'bg-blue-500/20 text-blue-400 border-blue-500/30': connector.status === 'cloning',
                                           'bg-gray-500/20 text-gray-400 border-gray-500/30': connector.status === 'not_started' || connector.status === 'pending'
                                       }"
-                                      x-text="connector.status === 'researching' ? 'Generating...' : connector.status.replace('_', ' ')">
+                                      x-text="connector.status === 'researching' ? 'Generating...' : (connector.status || 'pending').replace('_', ' ')">
                                 </span>
                             </div>
                             
-                            <div class="space-y-2 mb-4 text-sm">
-                                <div class="flex justify-between">
+                            <!-- Progress Section -->
+                            <div class="mb-4">
+                                <div class="flex items-center justify-between mb-2 text-sm">
                                     <span class="text-gray-500">Progress</span>
-                                    <span class="text-white" x-text="connector.progress.sections_completed.length + '/' + connector.progress.total_sections + ' sections'"></span>
+                                    <span class="text-white font-medium" x-text="(connector.progress?.sections_completed?.length || 0) + '/' + (connector.progress?.total_sections || 0) + ' sections'"></span>
                                 </div>
-                                <div class="flex justify-between" x-show="connector.vectors_count > 0">
+                                
+                                <!-- Progress bar inside card -->
+                                <div class="w-full bg-white/10 rounded-full h-2.5 mb-2">
+                                    <div class="h-2.5 rounded-full transition-all duration-500"
+                                         :class="{
+                                             'bg-gradient-to-r from-green-500 to-emerald-400': connector.status === 'complete',
+                                             'bg-gradient-to-r from-yellow-500 to-orange-400': connector.status === 'researching',
+                                             'bg-gradient-to-r from-blue-500 to-cyan-400': connector.status === 'cloning',
+                                             'bg-gray-500': connector.status === 'not_started' || connector.status === 'pending'
+                                         }"
+                                         :style="{ width: (connector.progress?.percentage || 0) + '%' }">
+                                    </div>
+                                </div>
+                                
+                                <!-- Current Section Name -->
+                                <div x-show="connector.status === 'researching' || connector.status === 'cloning'" 
+                                     class="text-xs text-gray-400 truncate">
+                                    <span class="text-yellow-400">●</span>
+                                    <span x-text="connector.progress?.current_section_name || 'Initializing...'"></span>
+                                </div>
+                                
+                                <!-- Vectors count -->
+                                <div class="flex justify-between text-xs mt-2" x-show="connector.vectors_count > 0">
                                     <span class="text-gray-500">Vectors</span>
                                     <span class="text-indigo-400" x-text="connector.vectors_count.toLocaleString()"></span>
                                 </div>
                             </div>
                             
-                            <!-- Progress bar -->
-                            <div class="w-full bg-white/10 rounded-full h-2 mb-4">
-                                <div class="h-2 rounded-full transition-all duration-500"
-                                     :class="{
-                                         'bg-gradient-to-r from-green-500 to-emerald-400': connector.status === 'complete',
-                                         'bg-gradient-to-r from-yellow-500 to-orange-400': connector.status === 'researching',
-                                         'bg-gradient-to-r from-blue-500 to-cyan-400': connector.status === 'cloning',
-                                         'bg-gray-500': connector.status === 'not_started'
-                                     }"
-                                     :style="{ width: connector.progress.percentage + '%' }">
-                                </div>
-                            </div>
-                            
                             <!-- Actions -->
-                            <div class="flex gap-2">
+                            <div class="flex gap-2 mt-auto flex-shrink-0">
                                 <template x-if="connector.status === 'complete'">
                                     <div class="flex gap-2 w-full">
                                         <button @click="viewConnectorResearch(connector.id)" class="flex-1 px-3 py-2 bg-white/5 hover:bg-white/10 rounded-lg text-sm transition-colors">View</button>
                                         <button @click="searchConnector(connector.id)" class="flex-1 px-3 py-2 bg-white/5 hover:bg-white/10 rounded-lg text-sm transition-colors">Search</button>
-                                        <button @click="deleteConnector(connector.id)" class="px-3 py-2 bg-red-500/20 hover:bg-red-500/30 text-red-400 rounded-lg text-sm transition-colors">
+                                        <button @click="deleteConnector(connector.id)" class="px-3 py-2 bg-red-500/20 hover:bg-red-500/30 text-red-400 rounded-lg text-sm transition-colors flex-shrink-0">
                                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
                                             </svg>
@@ -184,19 +195,19 @@
                                 </template>
                                 <template x-if="connector.status === 'researching' || connector.status === 'cloning'">
                                     <div class="flex gap-2 w-full">
-                                        <div class="flex-1 px-3 py-2 bg-yellow-500/20 text-yellow-400 rounded-lg text-sm flex items-center gap-2">
-                                            <svg class="w-4 h-4 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <div class="flex-1 px-3 py-2 bg-yellow-500/20 text-yellow-400 rounded-lg text-sm flex items-center gap-2 min-w-0">
+                                            <svg class="w-4 h-4 animate-spin flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
                                             </svg>
-                                            <span class="truncate" x-text="connector.progress.current_section_name || 'Processing...'"></span>
+                                            <span class="truncate" x-text="connector.progress?.current_section_name || 'Processing...'"></span>
                                         </div>
-                                        <button @click="cancelResearch(connector.id)" class="px-3 py-2 bg-red-500/20 hover:bg-red-500/30 text-red-400 rounded-lg text-sm transition-colors">Cancel</button>
+                                        <button @click="cancelResearch(connector.id)" class="px-3 py-2 bg-red-500/20 hover:bg-red-500/30 text-red-400 rounded-lg text-sm transition-colors flex-shrink-0">Cancel</button>
                                     </div>
                                 </template>
                                 <template x-if="connector.status === 'failed' || connector.status === 'cancelled'">
                                     <div class="flex gap-2 w-full">
                                         <button @click="startResearch(connector.id)" class="flex-1 px-3 py-2 bg-indigo-600 hover:bg-indigo-500 rounded-lg text-sm font-medium transition-colors">Retry</button>
-                                        <button @click="deleteConnector(connector.id)" class="px-3 py-2 bg-red-500/20 hover:bg-red-500/30 text-red-400 rounded-lg text-sm transition-colors flex items-center gap-1">
+                                        <button @click="deleteConnector(connector.id)" class="px-3 py-2 bg-red-500/20 hover:bg-red-500/30 text-red-400 rounded-lg text-sm transition-colors flex items-center gap-1 flex-shrink-0">
                                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
                                             </svg>
