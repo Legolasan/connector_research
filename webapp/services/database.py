@@ -176,10 +176,6 @@ def init_database() -> bool:
         global PGVECTOR_EXTENSION_AVAILABLE
         PGVECTOR_EXTENSION_AVAILABLE = False
         
-        # Enable pgvector extension if available
-        global PGVECTOR_EXTENSION_AVAILABLE
-        PGVECTOR_EXTENSION_AVAILABLE = False
-        
         if PGVECTOR_AVAILABLE:
             try:
                 with engine.connect() as conn:
@@ -202,10 +198,48 @@ def init_database() -> bool:
             DocumentChunkModel.embedding = Column(Vector(EMBEDDING_DIMENSION), nullable=True)
         
         # Create tables (will use embedding_json only if pgvector not available)
-        # If table already exists with VECTOR column but extension is gone, we'll get an error
-        # For now, we'll just create tables and let it fail if needed (user can manually fix)
         try:
             Base.metadata.create_all(bind=engine)
+            
+            # If pgvector is now available and table exists, check if we need to add VECTOR column
+            if PGVECTOR_EXTENSION_AVAILABLE:
+                with engine.connect() as conn:
+                    # Check if document_chunks table exists
+                    table_exists = conn.execute(text("""
+                        SELECT EXISTS (
+                            SELECT FROM information_schema.tables 
+                            WHERE table_name = 'document_chunks'
+                        )
+                    """)).scalar()
+                    
+                    if table_exists:
+                        # Check if embedding column exists
+                        column_exists = conn.execute(text("""
+                            SELECT EXISTS (
+                                SELECT FROM information_schema.columns 
+                                WHERE table_name = 'document_chunks' 
+                                AND column_name = 'embedding'
+                            )
+                        """)).scalar()
+                        
+                        if not column_exists:
+                            print("📊 Migrating: Adding VECTOR column to existing document_chunks table...")
+                            try:
+                                conn.execute(text(f"""
+                                    ALTER TABLE document_chunks 
+                                    ADD COLUMN embedding VECTOR({EMBEDDING_DIMENSION})
+                                """))
+                                conn.commit()
+                                print("✓ VECTOR column added successfully")
+                                
+                                # Migrate existing embeddings from JSON to VECTOR
+                                # Note: We'll migrate embeddings as they're accessed, not all at once
+                                # This avoids potential issues with large datasets
+                                print("📊 Migration: VECTOR column added. Existing embeddings will be migrated on access.")
+                                print("  → New embeddings will use VECTOR column directly")
+                            except Exception as migrate_error:
+                                print(f"⚠ Migration warning: {migrate_error}")
+                                conn.rollback()
         except Exception as table_error:
             error_str = str(table_error).lower()
             if "vector" in error_str and ("does not exist" in error_str or "undefinedobject" in error_str):
@@ -217,8 +251,6 @@ def init_database() -> bool:
                 if hasattr(DocumentChunkModel, 'embedding'):
                     delattr(DocumentChunkModel, 'embedding')
                 PGVECTOR_EXTENSION_AVAILABLE = False
-                # Try creating other tables (skip document_chunks)
-                # Actually, let's just continue - the table might already exist
                 print("  → Assuming tables already exist, continuing...")
             else:
                 raise

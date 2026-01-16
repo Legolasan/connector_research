@@ -166,7 +166,9 @@ class KnowledgeVault:
                 traceback.print_exc()
         
         # Check if pgvector extension is actually available (not just the Python package)
-        self._pgvector_available = PGVECTOR_EXTENSION_AVAILABLE and db_available
+        # Re-read from module in case it was just enabled during init_database()
+        import services.database as db_module
+        self._pgvector_available = db_module.PGVECTOR_EXTENSION_AVAILABLE and db_available
         
         print("📚 Knowledge Vault initialized!")
         print(f"  DATABASE_URL present: {bool(db_url)}")
