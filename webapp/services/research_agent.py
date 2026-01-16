@@ -179,6 +179,39 @@ class ResearchProgress:
     error_message: str = ""
 
 
+@dataclass
+class ResearchMetrics:
+    """Tracks metrics for Quick Summary dashboard."""
+    
+    # API Capabilities (from web search/documentation)
+    total_objects: int = 0
+    objects_by_method: Dict[str, int] = field(default_factory=dict)  # REST, GraphQL, SOAP, etc.
+    full_load_count: int = 0
+    incremental_count: int = 0
+    cdc_count: int = 0
+    auth_types: List[str] = field(default_factory=list)
+    sdk_info: List[str] = field(default_factory=list)
+    delete_methods: List[str] = field(default_factory=list)
+    
+    # Current Implementation (from GitHub)
+    impl_objects: int = 0
+    impl_by_method: Dict[str, int] = field(default_factory=dict)
+    impl_full_load: int = 0
+    impl_incremental: int = 0
+    impl_auth: List[str] = field(default_factory=list)
+    impl_sdk: str = ""
+    impl_object_names: List[str] = field(default_factory=list)
+    
+    # Fivetran Parity
+    fivetran_objects: int = 0
+    fivetran_supported: List[str] = field(default_factory=list)
+    fivetran_unsupported: List[str] = field(default_factory=list)
+    fivetran_features: Dict[str, bool] = field(default_factory=dict)
+    fivetran_auth: List[str] = field(default_factory=list)
+    fivetran_full_load: int = 0
+    fivetran_incremental: int = 0
+
+
 class ResearchAgent:
     """Agent that auto-generates connector research documents."""
     
@@ -202,6 +235,337 @@ class ResearchAgent:
     def cancel(self):
         """Request cancellation of current research."""
         self._cancel_requested = True
+    
+    def _extract_github_metrics(self, github_context: Dict[str, Any]) -> ResearchMetrics:
+        """Extract metrics from GitHub context for Quick Summary.
+        
+        Args:
+            github_context: Context extracted from GitHub repository
+            
+        Returns:
+            ResearchMetrics with implementation stats populated
+        """
+        metrics = ResearchMetrics()
+        
+        if not github_context:
+            return metrics
+        
+        # Check if structured format
+        is_structured = github_context.get('structure_type') == 'structured'
+        
+        if is_structured:
+            impl = github_context.get('implementation', {})
+            sdk = github_context.get('sdk', {})
+            
+            # Count models/objects
+            models = impl.get('models', [])
+            metrics.impl_objects = len(models)
+            metrics.impl_object_names = models[:50]
+            
+            # Detect API methods from api_calls
+            api_calls = impl.get('api_calls', [])
+            rest_count = sum(1 for c in api_calls if 'get' in c.lower() or 'post' in c.lower() or 'http' in c.lower())
+            graphql_count = sum(1 for c in api_calls if 'graphql' in c.lower() or 'query' in c.lower())
+            metrics.impl_by_method = {'REST': rest_count, 'GraphQL': graphql_count}
+            
+            # Auth detection
+            auth_impl = impl.get('auth_implementation', '')
+            if 'oauth' in auth_impl.lower():
+                metrics.impl_auth.append('OAuth 2.0')
+            if 'api_key' in auth_impl.lower() or 'apikey' in auth_impl.lower():
+                metrics.impl_auth.append('API Key')
+            if 'bearer' in auth_impl.lower():
+                metrics.impl_auth.append('Bearer Token')
+            if 'basic' in auth_impl.lower():
+                metrics.impl_auth.append('Basic Auth')
+            
+            # SDK info
+            sdk_name = sdk.get('sdk_name', '')
+            if sdk_name:
+                metrics.impl_sdk = sdk_name
+            
+            # Sync patterns
+            sync_patterns = impl.get('sync_patterns', [])
+            metrics.impl_incremental = sum(1 for p in sync_patterns if 'incremental' in p.lower() or 'cursor' in p.lower())
+            metrics.impl_full_load = max(0, metrics.impl_objects - metrics.impl_incremental)
+            
+        else:
+            # Legacy flat format
+            object_types = github_context.get('object_types', [])
+            metrics.impl_objects = len(object_types)
+            metrics.impl_object_names = object_types[:50]
+            
+            auth_patterns = github_context.get('auth_patterns', [])
+            for pattern in auth_patterns:
+                if 'oauth' in pattern.lower():
+                    metrics.impl_auth.append('OAuth 2.0')
+                elif 'api' in pattern.lower() and 'key' in pattern.lower():
+                    metrics.impl_auth.append('API Key')
+        
+        return metrics
+    
+    def _extract_fivetran_metrics(self, fivetran_context: Dict[str, Any]) -> ResearchMetrics:
+        """Extract metrics from Fivetran context for Quick Summary.
+        
+        Args:
+            fivetran_context: Context from Fivetran crawler
+            
+        Returns:
+            ResearchMetrics with Fivetran stats populated
+        """
+        metrics = ResearchMetrics()
+        
+        if not fivetran_context:
+            return metrics
+        
+        setup = fivetran_context.get('setup', {})
+        overview = fivetran_context.get('overview', {})
+        schema = fivetran_context.get('schema', {})
+        
+        # Supported objects
+        supported = schema.get('supported_objects', [])
+        unsupported = schema.get('unsupported_objects', [])
+        metrics.fivetran_objects = len(supported)
+        metrics.fivetran_supported = supported
+        metrics.fivetran_unsupported = unsupported
+        
+        # Auth methods
+        auth_methods = setup.get('auth_methods', [])
+        metrics.fivetran_auth = auth_methods
+        
+        # Features
+        features = overview.get('supported_features', {})
+        metrics.fivetran_features = features
+        
+        # Sync modes from objects
+        objects = schema.get('objects', [])
+        for obj in objects:
+            sync_mode = obj.get('sync_mode', '')
+            if sync_mode == 'incremental':
+                metrics.fivetran_incremental += 1
+            elif sync_mode == 'full_load':
+                metrics.fivetran_full_load += 1
+        
+        # If no specific sync modes, estimate from total
+        if metrics.fivetran_incremental == 0 and metrics.fivetran_full_load == 0:
+            metrics.fivetran_incremental = int(metrics.fivetran_objects * 0.7)  # Estimate
+            metrics.fivetran_full_load = metrics.fivetran_objects - metrics.fivetran_incremental
+        
+        return metrics
+    
+    def _calculate_parity(self, impl_objects: List[str], fivetran_objects: List[str]) -> Dict[str, Any]:
+        """Calculate parity between implementation and Fivetran.
+        
+        Args:
+            impl_objects: List of implemented object names
+            fivetran_objects: List of Fivetran supported object names
+            
+        Returns:
+            Dict with parity percentage and gap analysis
+        """
+        impl_set = set(obj.lower() for obj in impl_objects)
+        fivetran_set = set(obj.lower() for obj in fivetran_objects)
+        
+        # Objects we have that Fivetran doesn't
+        extra_objects = impl_set - fivetran_set
+        
+        # Objects Fivetran has that we're missing
+        missing_objects = fivetran_set - impl_set
+        
+        # Common objects
+        common = impl_set & fivetran_set
+        
+        # Parity percentage (what % of Fivetran objects do we support)
+        if fivetran_set:
+            parity_pct = (len(common) / len(fivetran_set)) * 100
+        else:
+            parity_pct = 0
+        
+        return {
+            'parity_percentage': round(parity_pct, 1),
+            'common_count': len(common),
+            'fivetran_total': len(fivetran_set),
+            'extra_objects': list(extra_objects)[:20],
+            'missing_objects': list(missing_objects)[:20],
+            'extra_count': len(extra_objects),
+            'missing_count': len(missing_objects)
+        }
+    
+    def _generate_quick_summary(
+        self,
+        connector_name: str,
+        connector_type: str,
+        github_context: Optional[Dict[str, Any]] = None,
+        fivetran_context: Optional[Dict[str, Any]] = None
+    ) -> str:
+        """Generate Quick Summary Dashboard with stacked cards.
+        
+        Args:
+            connector_name: Name of the connector
+            connector_type: Type of connector (REST, GraphQL, etc.)
+            github_context: Optional GitHub context for implementation stats
+            fivetran_context: Optional Fivetran context for parity analysis
+            
+        Returns:
+            Markdown string for Quick Summary section
+        """
+        summary_parts = []
+        
+        # Header
+        summary_parts.append("""
+# 📋 Quick Summary Dashboard
+
+> At-a-glance metrics and comparison for rapid assessment
+
+---
+""")
+        
+        # Card 1: API Capabilities (always shown)
+        summary_parts.append("""
+## 📊 API Capabilities (from Documentation)
+
+| Metric | Value |
+|--------|-------|
+| **Connector Type** | """ + connector_type.upper() + """ |
+| **Primary API** | """ + self._get_primary_api(connector_type) + """ |
+| **Auth Types** | _See Section 5_ |
+| **Official SDKs** | _See Section 15_ |
+| **Rate Limits** | _See Section 12_ |
+
+> 💡 Detailed object catalog available in **Section 19**
+
+---
+""")
+        
+        # Card 2: Current Implementation (if GitHub provided)
+        if github_context:
+            github_metrics = self._extract_github_metrics(github_context)
+            
+            impl_auth_str = ', '.join(github_metrics.impl_auth) if github_metrics.impl_auth else '_Not detected_'
+            sdk_str = github_metrics.impl_sdk if github_metrics.impl_sdk else '_Not detected_'
+            
+            # Build method breakdown
+            method_parts = []
+            for method, count in github_metrics.impl_by_method.items():
+                if count > 0:
+                    method_parts.append(f"{method}: {count}")
+            method_str = ', '.join(method_parts) if method_parts else '_Mixed_'
+            
+            summary_parts.append(f"""
+## 🔧 Current Implementation (from GitHub)
+
+| Metric | Value |
+|--------|-------|
+| **Objects Implemented** | {github_metrics.impl_objects} |
+| **By Extraction Method** | {method_str} |
+| **Full Load Objects** | {github_metrics.impl_full_load} |
+| **Incremental Objects** | {github_metrics.impl_incremental} |
+| **Auth Implemented** | {impl_auth_str} |
+| **SDK Used** | {sdk_str} |
+
+> 📁 Repository: `{github_context.get('repo_url', 'N/A')}`
+
+---
+""")
+        
+        # Card 3: Fivetran Parity (if Fivetran URLs provided)
+        if fivetran_context:
+            fivetran_metrics = self._extract_fivetran_metrics(fivetran_context)
+            
+            # Calculate parity if we have implementation data
+            parity_info = None
+            if github_context:
+                github_metrics = self._extract_github_metrics(github_context)
+                parity_info = self._calculate_parity(
+                    github_metrics.impl_object_names,
+                    fivetran_metrics.fivetran_supported
+                )
+            
+            fivetran_auth_str = ', '.join(fivetran_metrics.fivetran_auth) if fivetran_metrics.fivetran_auth else '_Not specified_'
+            
+            # Feature checkmarks
+            features = fivetran_metrics.fivetran_features
+            capture_deletes = '✓ Supported' if features.get('capture_deletes') else '✗ Not supported'
+            history_mode = '✓ Supported' if features.get('history_mode') else '✗ Not supported'
+            
+            summary_parts.append(f"""
+## 🎯 Fivetran Parity Analysis
+
+| Metric | Value |
+|--------|-------|
+| **Fivetran Objects** | {fivetran_metrics.fivetran_objects} |
+| **Full Load Objects** | {fivetran_metrics.fivetran_full_load} |
+| **Incremental Objects** | {fivetran_metrics.fivetran_incremental} |
+| **Auth Methods** | {fivetran_auth_str} |
+| **Capture Deletes** | {capture_deletes} |
+| **History Mode** | {history_mode} |
+""")
+            
+            # Add parity score and gap analysis if we have implementation data
+            if parity_info:
+                summary_parts.append(f"""
+### Parity Score
+
+| | |
+|---|---|
+| **Score** | **{parity_info['parity_percentage']}%** ({parity_info['common_count']}/{parity_info['fivetran_total']} objects) |
+
+### Gap Analysis
+
+**Objects we have that Fivetran doesn't ({parity_info['extra_count']}):**
+""")
+                if parity_info['extra_objects']:
+                    summary_parts.append('- ' + ', '.join(parity_info['extra_objects'][:10]))
+                    if parity_info['extra_count'] > 10:
+                        summary_parts.append(f'- _...and {parity_info["extra_count"] - 10} more_')
+                else:
+                    summary_parts.append('- _None_')
+                
+                summary_parts.append(f"""
+**Objects Fivetran has that we're missing ({parity_info['missing_count']}):**
+""")
+                if parity_info['missing_objects']:
+                    summary_parts.append('- ' + ', '.join(parity_info['missing_objects'][:10]))
+                    if parity_info['missing_count'] > 10:
+                        summary_parts.append(f'- _...and {parity_info["missing_count"] - 10} more_')
+                else:
+                    summary_parts.append('- _None - Full parity achieved!_')
+            
+            summary_parts.append("""
+---
+""")
+        
+        # Navigation hint
+        summary_parts.append("""
+## 📑 Document Navigation
+
+| Phase | Sections | Focus |
+|-------|----------|-------|
+| **Phase 1** | 1-3 | Platform Understanding |
+| **Phase 2** | 4-7 | Data Access & Auth |
+| **Phase 3** | 8-11 | Sync & Extraction |
+| **Phase 4** | 12-14 | Reliability & Performance |
+| **Phase 5** | 15-17 | Advanced Topics |
+| **Phase 6** | 18 | Troubleshooting |
+| **Phase 7** | 19 | Object Catalog |
+
+---
+
+""")
+        
+        return '\n'.join(summary_parts)
+    
+    def _get_primary_api(self, connector_type: str) -> str:
+        """Get primary API description from connector type."""
+        type_map = {
+            'rest_api': 'REST API',
+            'graphql': 'GraphQL API',
+            'soap': 'SOAP/XML Web Services',
+            'jdbc': 'JDBC Database Connection',
+            'sdk': 'Official SDK',
+            'webhook': 'Webhooks/Event-driven'
+        }
+        return type_map.get(connector_type.lower(), connector_type.upper())
     
     async def _web_search(self, query: str) -> str:
         """Perform web search using Tavily.
@@ -689,22 +1053,47 @@ Generate comprehensive markdown content for this section. Include:
             
             content = response.choices[0].message.content
             
-            # Format as markdown section
+            # Phase emoji mapping
+            phase_emojis = {
+                1: "🔍",  # Understand the Platform
+                2: "🔐",  # Data Access Mechanisms
+                3: "🔄",  # Sync Design & Extraction
+                4: "⚡",  # Reliability & Performance
+                5: "🔧",  # Advanced Considerations
+                6: "🛠️",  # Troubleshooting
+                7: "📋",  # Object Catalog
+            }
+            phase_emoji = phase_emojis.get(section.phase, "📄")
+            
+            # Format as markdown section with improved layout
             formatted = f"""
-# Phase {section.phase} - {section.phase_name}
+
+---
+
+# {phase_emoji} Phase {section.phase}: {section.phase_name}
 
 ## {section.number}. {section.name}
 
 {content}
 
----
-*Section generated on {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')} using web search*
+<details>
+<summary>📌 Section Metadata</summary>
+
+- Generated: {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}
+- Source: Web search + AI synthesis
+
+</details>
+
+[↑ Back to Summary](#-quick-summary-dashboard)
 
 """
             return formatted
             
         except Exception as e:
             return f"""
+
+---
+
 ## {section.number}. {section.name}
 
 **Error generating section:** {str(e)}
@@ -762,16 +1151,17 @@ Generate comprehensive markdown content for this section. Include:
         if fivetran_context:
             research_method_parts.append("Fivetran documentation parity analysis")
         
-        # Initialize document
-        document_parts = [f"""# Connector Research: {connector_name}
+        # Initialize document with header
+        document_parts = [f"""# 📚 Connector Research: {connector_name}
 
 **Subject:** {connector_name} Connector - Full Production Research  
 **Status:** Complete  
 **Generated:** {datetime.utcnow().strftime('%Y-%m-%d')}  
+**Sections:** 19 comprehensive research sections
 
 ---
 
-## Research Overview
+## 📝 Research Overview
 
 **Goal:** Produce exhaustive, production-grade research on building a data connector for {connector_name}.
 
@@ -783,6 +1173,15 @@ Generate comprehensive markdown content for this section. Include:
 
 ---
 """]
+        
+        # Generate Quick Summary Dashboard
+        quick_summary = self._generate_quick_summary(
+            connector_name=connector_name,
+            connector_type=connector_type,
+            github_context=github_context,
+            fivetran_context=fivetran_context
+        )
+        document_parts.append(quick_summary)
         
         # Prepare GitHub context string (for legacy flat format)
         github_context_str = ""
@@ -850,69 +1249,94 @@ Documentation Endpoints: {len(docs.get('endpoints_list', []))} documented
             # Small delay to avoid rate limits
             await asyncio.sleep(1)
         
-        # Add final sections
+        # Add final sections with improved formatting
         document_parts.append("""
-# Final Deliverables
-
-## Production Recommendations
-
-1. Implement exponential backoff for rate limit handling
-2. Use incremental sync with lastModifiedDate cursor where available
-3. Implement proper OAuth token refresh before expiration
-4. Handle pagination consistently across all objects
-5. Implement delete detection via soft delete flags or audit logs
-6. Set appropriate timeouts for long-running operations
-7. Use bulk APIs for historical loads when available
-8. Implement proper error categorization (retryable vs non-retryable)
-9. Monitor API usage against quotas
-10. Test thoroughly with sandbox environment before production
-11. Document all custom field mappings
-12. Implement proper parent-child load ordering
-
-## Implementation Checklist
-
-- [ ] Authentication configured and tested
-- [ ] Rate limiting implemented with backoff
-- [ ] Error handling with retry logic
-- [ ] Incremental sync with cursor fields
-- [ ] Delete detection mechanism
-- [ ] Custom fields discovery
-- [ ] Parent-child load ordering
-- [ ] Monitoring and alerting
-- [ ] Documentation complete
 
 ---
 
-## Sources and Methodology
+# ✅ Final Deliverables
+
+## 🎯 Production Recommendations
+
+| Priority | Recommendation |
+|----------|----------------|
+| **Critical** | Implement exponential backoff for rate limit handling |
+| **Critical** | Implement proper OAuth token refresh before expiration |
+| **Critical** | Handle pagination consistently across all objects |
+| **High** | Use incremental sync with lastModifiedDate cursor where available |
+| **High** | Implement delete detection via soft delete flags or audit logs |
+| **High** | Set appropriate timeouts for long-running operations |
+| **Medium** | Use bulk APIs for historical loads when available |
+| **Medium** | Implement proper error categorization (retryable vs non-retryable) |
+| **Medium** | Monitor API usage against quotas |
+| **Medium** | Test thoroughly with sandbox environment before production |
+| **Low** | Document all custom field mappings |
+| **Low** | Implement proper parent-child load ordering |
+
+---
+
+## ☑️ Implementation Checklist
+
+| Task | Status | Notes |
+|------|--------|-------|
+| Authentication configured and tested | ⬜ | |
+| Rate limiting implemented with backoff | ⬜ | |
+| Error handling with retry logic | ⬜ | |
+| Incremental sync with cursor fields | ⬜ | |
+| Delete detection mechanism | ⬜ | |
+| Custom fields discovery | ⬜ | |
+| Parent-child load ordering | ⬜ | |
+| Monitoring and alerting | ⬜ | |
+| Documentation complete | ⬜ | |
+
+---
+
+## 📚 Sources and Methodology
 
 This research document was generated using:
-- Web search via Tavily API
-- Official documentation analysis
+
+| Source | Description |
+|--------|-------------|
+| **Tavily API** | Web search for official documentation |
+| **OpenAI GPT-4** | AI synthesis and analysis |
 """)
         
         if github_context:
+            repo_url = github_context.get('repo_url', 'N/A')
             if is_structured:
-                document_parts.append(f"- Structured repository analysis: {github_context.get('repo_url', 'N/A')}")
-                document_parts.append("  - Connector_Code: Implementation patterns, API calls, auth flow")
-                document_parts.append("  - Connector_SDK: SDK methods, data types, client classes")
-                document_parts.append("  - Public_Documentation: API reference, auth guide, rate limits")
+                document_parts.append(f"""| **GitHub Repository** | `{repo_url}` |
+| | Connector_Code: Implementation patterns |
+| | Connector_SDK: SDK methods, data types |
+| | Public_Documentation: API reference |""")
             else:
-                document_parts.append(f"- GitHub repository analysis: {github_context.get('repo_url', 'N/A')}")
+                document_parts.append(f"| **GitHub Repository** | `{repo_url}` |")
         
         if fivetran_context:
-            document_parts.append("- Fivetran documentation parity analysis:")
+            fivetran_sources = []
             if fivetran_context.get('has_setup'):
-                document_parts.append("  - Setup Guide: Prerequisites, authentication methods")
+                fivetran_sources.append("Setup Guide")
             if fivetran_context.get('has_overview'):
-                document_parts.append("  - Connector Overview: Supported features, sync strategies")
+                fivetran_sources.append("Connector Overview")
             if fivetran_context.get('has_schema'):
-                document_parts.append("  - Schema Information: Objects, parent-child relationships")
+                fivetran_sources.append("Schema Information")
+            document_parts.append(f"| **Fivetran Docs** | {', '.join(fivetran_sources)} |")
         
         document_parts.append(f"""
 
 ---
 
-*Document generated by Connector Research Agent on {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}*
+## 🏷️ Document Info
+
+| | |
+|---|---|
+| **Generated By** | Connector Research Agent |
+| **Generated On** | {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')} |
+| **Total Sections** | 19 |
+| **Version** | 1.0 |
+
+---
+
+*End of Document*
 """)
         
         # Combine all parts
