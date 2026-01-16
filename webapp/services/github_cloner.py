@@ -26,6 +26,71 @@ class CodePattern:
 
 
 @dataclass
+class ImplementationContext:
+    """Context extracted from Connector_Code folder - your implementation."""
+    api_calls: List[str] = field(default_factory=list)           # HTTP calls made
+    models: List[str] = field(default_factory=list)              # Data models/classes
+    auth_implementation: str = ""                                 # How auth is implemented
+    sync_patterns: List[str] = field(default_factory=list)       # Sync/pagination patterns found
+    config_patterns: List[str] = field(default_factory=list)     # Configuration patterns
+    error_handling: List[str] = field(default_factory=list)      # Error handling patterns
+    
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            'api_calls': self.api_calls[:50],
+            'models': self.models[:50],
+            'auth_implementation': self.auth_implementation[:2000],
+            'sync_patterns': self.sync_patterns[:20],
+            'config_patterns': self.config_patterns[:20],
+            'error_handling': self.error_handling[:20]
+        }
+
+
+@dataclass
+class SDKContext:
+    """Context extracted from Connector_SDK folder - vendor SDK source."""
+    sdk_name: str = ""
+    available_methods: List[str] = field(default_factory=list)   # Public methods
+    data_types: List[str] = field(default_factory=list)          # Types/models exposed
+    auth_methods: List[str] = field(default_factory=list)        # Auth helpers
+    client_classes: List[str] = field(default_factory=list)      # Client/service classes
+    constants: List[str] = field(default_factory=list)           # Constants/enums
+    
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            'sdk_name': self.sdk_name,
+            'available_methods': self.available_methods[:100],
+            'data_types': self.data_types[:100],
+            'auth_methods': self.auth_methods[:50],
+            'client_classes': self.client_classes[:50],
+            'constants': self.constants[:50]
+        }
+
+
+@dataclass
+class DocumentationContext:
+    """Context extracted from Public_Documentation folder - official docs."""
+    api_reference: str = ""             # Extracted API docs
+    auth_guide: str = ""                # Auth documentation
+    rate_limits: str = ""               # Rate limit info
+    objects_schema: str = ""            # Object definitions
+    endpoints_list: List[str] = field(default_factory=list)  # Documented endpoints
+    permissions: List[str] = field(default_factory=list)     # Required permissions
+    raw_content: str = ""               # Full raw content for reference
+    
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            'api_reference': self.api_reference[:3000],
+            'auth_guide': self.auth_guide[:2000],
+            'rate_limits': self.rate_limits[:1000],
+            'objects_schema': self.objects_schema[:3000],
+            'endpoints_list': self.endpoints_list[:100],
+            'permissions': self.permissions[:50],
+            'raw_content': self.raw_content[:5000]
+        }
+
+
+@dataclass
 class ExtractedCode:
     """Results of code extraction from a repository."""
     repo_url: str
@@ -39,8 +104,14 @@ class ExtractedCode:
     readme_content: str = ""
     extracted_at: str = field(default_factory=lambda: datetime.utcnow().isoformat())
     
+    # New structured fields for organized repositories
+    structure_type: str = "flat"  # 'flat' or 'structured'
+    implementation: Optional[ImplementationContext] = None
+    sdk: Optional[SDKContext] = None
+    documentation: Optional[DocumentationContext] = None
+    
     def to_dict(self) -> Dict[str, Any]:
-        return {
+        result = {
             'repo_url': self.repo_url,
             'repo_name': self.repo_name,
             'clone_path': self.clone_path,
@@ -60,8 +131,19 @@ class ExtractedCode:
             'object_types': self.object_types[:100],
             'auth_patterns': self.auth_patterns,
             'readme_summary': self.readme_content[:2000] if self.readme_content else "",
-            'extracted_at': self.extracted_at
+            'extracted_at': self.extracted_at,
+            'structure_type': self.structure_type
         }
+        
+        # Add structured context if available
+        if self.implementation:
+            result['implementation'] = self.implementation.to_dict()
+        if self.sdk:
+            result['sdk'] = self.sdk.to_dict()
+        if self.documentation:
+            result['documentation'] = self.documentation.to_dict()
+        
+        return result
 
 
 class GitHubCloner:
@@ -105,6 +187,52 @@ class GitHubCloner:
         r'type\s+(\w+)(Record|Entity|Model|Object|Resource)',
         r'enum\s+(\w+)(Type|Status|Category)',
     ]
+    
+    # Structured repository folder names
+    STRUCTURED_FOLDERS = {
+        'implementation': ['Connector_Code', 'connector_code', 'src', 'implementation'],
+        'sdk': ['Connector_SDK', 'connector_sdk', 'sdk', 'vendor'],
+        'documentation': ['Public_Documentation', 'public_documentation', 'docs', 'documentation']
+    }
+    
+    # Patterns for implementation code analysis
+    HTTP_CALL_PATTERNS = [
+        r'requests\.(get|post|put|delete|patch)\s*\(',
+        r'http[cC]lient\.(get|post|put|delete|patch)\s*\(',
+        r'fetch\s*\(["\'][^"\']+["\']',
+        r'axios\.(get|post|put|delete|patch)\s*\(',
+        r'HttpClient\.new[A-Z]\w*\(',
+        r'\.execute\s*\(\s*["\']?(GET|POST|PUT|DELETE|PATCH)',
+        r'WebClient\.\w+\(\)',
+        r'RestTemplate\.\w+\(',
+    ]
+    
+    SYNC_PATTERN_MARKERS = [
+        r'(next_?page|nextPage|page_?token|pageToken)',
+        r'(offset|limit|skip|take)',
+        r'(cursor|after|before)',
+        r'(hasMore|has_more|moreResults)',
+        r'(lastModified|last_modified|updated_?at|updatedAt)',
+        r'(sync|incremental|delta|checkpoint)',
+    ]
+    
+    ERROR_HANDLING_PATTERNS = [
+        r'except\s+(\w+Error|\w+Exception)',
+        r'catch\s*\(\s*(\w+Error|\w+Exception)',
+        r'on\s+(\w+Error|\w+Exception)',
+        r'\.catch\s*\(',
+        r'try\s*{',
+        r'retry|backoff|exponential',
+    ]
+    
+    # Documentation keyword patterns
+    DOC_SECTION_KEYWORDS = {
+        'auth': ['authentication', 'authorization', 'oauth', 'api key', 'token', 'credentials', 'login', 'sign in'],
+        'rate_limits': ['rate limit', 'throttl', 'quota', 'requests per', 'calls per', 'limit exceed'],
+        'objects': ['object', 'entity', 'resource', 'schema', 'model', 'field', 'property', 'attribute'],
+        'endpoints': ['endpoint', 'api reference', 'method', 'request', 'response', 'url', 'path'],
+        'permissions': ['permission', 'scope', 'role', 'access', 'privilege', 'grant']
+    }
     
     def __init__(self, base_dir: Optional[Path] = None):
         """Initialize the cloner.
@@ -397,12 +525,378 @@ class GitHubCloner:
             if name not in result.object_types:
                 result.object_types.append(name)
     
+    # =====================
+    # Structured Repository Detection & Extraction
+    # =====================
+    
+    def _detect_structure(self, repo_path: Path) -> Tuple[str, Dict[str, Optional[Path]]]:
+        """Detect if repository follows the structured format.
+        
+        Args:
+            repo_path: Path to the cloned repository
+            
+        Returns:
+            Tuple of (structure_type, folder_paths)
+        """
+        folder_paths = {
+            'implementation': None,
+            'sdk': None,
+            'documentation': None
+        }
+        
+        # Check for each folder type
+        for folder_type, possible_names in self.STRUCTURED_FOLDERS.items():
+            for name in possible_names:
+                folder_path = repo_path / name
+                if folder_path.exists() and folder_path.is_dir():
+                    folder_paths[folder_type] = folder_path
+                    break
+        
+        # Determine structure type
+        found_count = sum(1 for p in folder_paths.values() if p is not None)
+        structure_type = 'structured' if found_count >= 2 else 'flat'
+        
+        return structure_type, folder_paths
+    
+    def _extract_implementation_context(self, impl_path: Path) -> ImplementationContext:
+        """Extract context from Connector_Code folder.
+        
+        Args:
+            impl_path: Path to the implementation folder
+            
+        Returns:
+            ImplementationContext with extracted patterns
+        """
+        context = ImplementationContext()
+        auth_code_snippets = []
+        
+        for file_path in impl_path.rglob('*'):
+            if not file_path.is_file():
+                continue
+            
+            ext = file_path.suffix.lower()
+            if ext not in self.CODE_EXTENSIONS:
+                continue
+            
+            try:
+                content = file_path.read_text(errors='ignore')
+                rel_path = str(file_path.relative_to(impl_path))
+                
+                # Extract HTTP API calls
+                for pattern in self.HTTP_CALL_PATTERNS:
+                    for match in re.finditer(pattern, content, re.IGNORECASE):
+                        call_context = content[max(0, match.start()-50):match.end()+100]
+                        if call_context not in context.api_calls:
+                            context.api_calls.append(f"{rel_path}: {call_context.strip()}")
+                
+                # Extract data models/classes
+                class_pattern = r'(?:class|interface|type|struct)\s+(\w+)'
+                for match in re.finditer(class_pattern, content):
+                    model_name = match.group(1)
+                    if model_name not in context.models:
+                        context.models.append(model_name)
+                
+                # Extract auth implementation
+                auth_keywords = ['auth', 'oauth', 'token', 'credential', 'api_key', 'apikey']
+                if any(kw in content.lower() for kw in auth_keywords):
+                    if any(kw in file_path.name.lower() for kw in auth_keywords):
+                        auth_code_snippets.append(f"--- {rel_path} ---\n{content[:2000]}")
+                
+                # Extract sync/pagination patterns
+                for pattern in self.SYNC_PATTERN_MARKERS:
+                    if re.search(pattern, content, re.IGNORECASE):
+                        match = re.search(pattern, content, re.IGNORECASE)
+                        if match:
+                            pattern_context = content[max(0, match.start()-30):match.end()+50]
+                            if pattern_context not in context.sync_patterns:
+                                context.sync_patterns.append(f"{rel_path}: {pattern_context.strip()}")
+                
+                # Extract error handling patterns
+                for pattern in self.ERROR_HANDLING_PATTERNS:
+                    for match in re.finditer(pattern, content, re.IGNORECASE):
+                        error_context = content[max(0, match.start()-20):match.end()+80]
+                        if error_context not in context.error_handling:
+                            context.error_handling.append(error_context.strip())
+                
+                # Extract config patterns
+                config_pattern = r'(config|setting|option|param)\s*[=:]\s*["\']?[\w.]+["\']?'
+                for match in re.finditer(config_pattern, content, re.IGNORECASE):
+                    if match.group(0) not in context.config_patterns:
+                        context.config_patterns.append(match.group(0))
+                        
+            except Exception as e:
+                print(f"Warning: Could not process {file_path}: {e}")
+        
+        # Combine auth snippets
+        context.auth_implementation = "\n\n".join(auth_code_snippets[:5])
+        
+        return context
+    
+    def _extract_sdk_context(self, sdk_path: Path) -> SDKContext:
+        """Extract context from Connector_SDK folder.
+        
+        Args:
+            sdk_path: Path to the SDK folder
+            
+        Returns:
+            SDKContext with extracted patterns
+        """
+        context = SDKContext()
+        
+        # Try to determine SDK name from folder structure
+        for child in sdk_path.iterdir():
+            if child.is_dir() and not child.name.startswith('.'):
+                context.sdk_name = child.name
+                break
+        
+        if not context.sdk_name:
+            context.sdk_name = sdk_path.name
+        
+        for file_path in sdk_path.rglob('*'):
+            if not file_path.is_file():
+                continue
+            
+            ext = file_path.suffix.lower()
+            if ext not in self.CODE_EXTENSIONS:
+                continue
+            
+            try:
+                content = file_path.read_text(errors='ignore')
+                
+                # Extract public methods
+                method_patterns = [
+                    r'public\s+\w+\s+(\w+)\s*\(',  # Java public methods
+                    r'def\s+(\w+)\s*\(',           # Python methods
+                    r'(?:export\s+)?(?:async\s+)?function\s+(\w+)',  # JS functions
+                    r'func\s+(\w+)\s*\(',          # Go functions
+                ]
+                for pattern in method_patterns:
+                    for match in re.finditer(pattern, content):
+                        method_name = match.group(1)
+                        if not method_name.startswith('_') and method_name not in context.available_methods:
+                            context.available_methods.append(method_name)
+                
+                # Extract data types
+                type_patterns = [
+                    r'(?:class|interface|type|struct)\s+(\w+)',
+                    r'@dataclass\s*\n\s*class\s+(\w+)',
+                    r'type\s+(\w+)\s*=',
+                ]
+                for pattern in type_patterns:
+                    for match in re.finditer(pattern, content):
+                        type_name = match.group(1)
+                        if type_name not in context.data_types:
+                            context.data_types.append(type_name)
+                
+                # Extract auth-related methods
+                auth_method_pattern = r'(?:def|function|public\s+\w+)\s+(\w*(?:auth|login|token|credential|oauth)\w*)\s*\('
+                for match in re.finditer(auth_method_pattern, content, re.IGNORECASE):
+                    method = match.group(1)
+                    if method not in context.auth_methods:
+                        context.auth_methods.append(method)
+                
+                # Extract client/service classes
+                client_pattern = r'(?:class|interface)\s+(\w*(?:Client|Service|Api|Connection|Session)\w*)'
+                for match in re.finditer(client_pattern, content):
+                    client = match.group(1)
+                    if client not in context.client_classes:
+                        context.client_classes.append(client)
+                
+                # Extract constants/enums
+                const_patterns = [
+                    r'(?:final\s+)?(?:static\s+)?(?:final\s+)?\w+\s+([A-Z][A-Z_0-9]+)\s*=',
+                    r'enum\s+(\w+)',
+                    r'([A-Z][A-Z_0-9]{2,})\s*=\s*["\'\d]',
+                ]
+                for pattern in const_patterns:
+                    for match in re.finditer(pattern, content):
+                        const = match.group(1)
+                        if const not in context.constants:
+                            context.constants.append(const)
+                            
+            except Exception as e:
+                print(f"Warning: Could not process {file_path}: {e}")
+        
+        return context
+    
+    def _html_to_text(self, html_content: str) -> str:
+        """Convert HTML to plain text by stripping tags.
+        
+        Args:
+            html_content: HTML content
+            
+        Returns:
+            Plain text content
+        """
+        # Remove script and style elements
+        html_content = re.sub(r'<script[^>]*>.*?</script>', '', html_content, flags=re.DOTALL | re.IGNORECASE)
+        html_content = re.sub(r'<style[^>]*>.*?</style>', '', html_content, flags=re.DOTALL | re.IGNORECASE)
+        
+        # Remove HTML tags
+        text = re.sub(r'<[^>]+>', ' ', html_content)
+        
+        # Decode HTML entities
+        text = re.sub(r'&nbsp;', ' ', text)
+        text = re.sub(r'&lt;', '<', text)
+        text = re.sub(r'&gt;', '>', text)
+        text = re.sub(r'&amp;', '&', text)
+        text = re.sub(r'&quot;', '"', text)
+        
+        # Clean up whitespace
+        text = re.sub(r'\s+', ' ', text)
+        
+        return text.strip()
+    
+    def _categorize_docs(self, content: str) -> Dict[str, str]:
+        """Categorize documentation content by keywords.
+        
+        Args:
+            content: Full documentation content
+            
+        Returns:
+            Dict with categorized content sections
+        """
+        categories = {
+            'auth': [],
+            'rate_limits': [],
+            'objects': [],
+            'endpoints': [],
+            'permissions': []
+        }
+        
+        # Split content into paragraphs
+        paragraphs = re.split(r'\n\s*\n', content)
+        
+        for para in paragraphs:
+            para_lower = para.lower()
+            for category, keywords in self.DOC_SECTION_KEYWORDS.items():
+                if any(kw in para_lower for kw in keywords):
+                    categories[category].append(para.strip())
+        
+        return {k: '\n\n'.join(v[:10]) for k, v in categories.items()}
+    
+    def _extract_documentation_context(self, doc_path: Path) -> DocumentationContext:
+        """Extract context from Public_Documentation folder.
+        
+        Args:
+            doc_path: Path to the documentation folder
+            
+        Returns:
+            DocumentationContext with extracted content
+        """
+        context = DocumentationContext()
+        content_parts = []
+        
+        for file_path in doc_path.rglob('*'):
+            if not file_path.is_file():
+                continue
+            
+            try:
+                file_content = ""
+                ext = file_path.suffix.lower()
+                
+                if ext == '.md':
+                    file_content = file_path.read_text(errors='ignore')
+                elif ext in ['.html', '.htm']:
+                    raw_html = file_path.read_text(errors='ignore')
+                    file_content = self._html_to_text(raw_html)
+                elif ext == '.txt':
+                    file_content = file_path.read_text(errors='ignore')
+                elif ext == '.rst':
+                    file_content = file_path.read_text(errors='ignore')
+                elif ext == '.json':
+                    # JSON might be API spec (OpenAPI, etc.)
+                    file_content = file_path.read_text(errors='ignore')
+                elif ext in ['.yaml', '.yml']:
+                    file_content = file_path.read_text(errors='ignore')
+                
+                if file_content:
+                    content_parts.append(f"--- {file_path.name} ---\n{file_content}")
+                    
+            except Exception as e:
+                print(f"Warning: Could not read {file_path}: {e}")
+        
+        # Combine all content
+        full_content = '\n\n'.join(content_parts)
+        context.raw_content = full_content
+        
+        # Categorize content
+        categorized = self._categorize_docs(full_content)
+        context.auth_guide = categorized.get('auth', '')
+        context.rate_limits = categorized.get('rate_limits', '')
+        context.objects_schema = categorized.get('objects', '')
+        context.api_reference = categorized.get('endpoints', '')
+        
+        # Extract permissions
+        perm_pattern = r'(?:permission|scope|role)[:\s]+["\']?(\w+(?:[:\.\-_]\w+)*)["\']?'
+        for match in re.finditer(perm_pattern, full_content, re.IGNORECASE):
+            perm = match.group(1)
+            if perm not in context.permissions:
+                context.permissions.append(perm)
+        
+        # Extract endpoint URLs
+        endpoint_pattern = r'(?:GET|POST|PUT|DELETE|PATCH)\s+(/[\w/{}\-\.]+)'
+        for match in re.finditer(endpoint_pattern, full_content):
+            endpoint = f"{match.group(0)}"
+            if endpoint not in context.endpoints_list:
+                context.endpoints_list.append(endpoint)
+        
+        # Also look for URL patterns
+        url_pattern = r'["\']/(api|v\d+)/[\w/{\}\-\.]+["\']'
+        for match in re.finditer(url_pattern, full_content):
+            endpoint = match.group(0).strip('"\'')
+            if endpoint not in context.endpoints_list:
+                context.endpoints_list.append(endpoint)
+        
+        return context
+    
+    def extract_structured_patterns(self, repo_path: Path) -> ExtractedCode:
+        """Extract patterns from a structured repository.
+        
+        Args:
+            repo_path: Path to the cloned repository
+            
+        Returns:
+            ExtractedCode with structured context
+        """
+        # First, do the standard extraction
+        result = self.extract_patterns(repo_path)
+        
+        # Detect structure
+        structure_type, folder_paths = self._detect_structure(repo_path)
+        result.structure_type = structure_type
+        
+        if structure_type == 'structured':
+            print(f"Detected structured repository format")
+            
+            # Extract from each folder if present
+            if folder_paths['implementation']:
+                print(f"  - Extracting from Connector_Code: {folder_paths['implementation']}")
+                result.implementation = self._extract_implementation_context(folder_paths['implementation'])
+            
+            if folder_paths['sdk']:
+                print(f"  - Extracting from Connector_SDK: {folder_paths['sdk']}")
+                result.sdk = self._extract_sdk_context(folder_paths['sdk'])
+            
+            if folder_paths['documentation']:
+                print(f"  - Extracting from Public_Documentation: {folder_paths['documentation']}")
+                result.documentation = self._extract_documentation_context(folder_paths['documentation'])
+        else:
+            print(f"Flat repository structure detected, using standard extraction")
+        
+        return result
+    
     async def clone_and_extract(
         self, 
         github_url: str, 
         connector_id: str
     ) -> ExtractedCode:
         """Clone a repository and extract all patterns.
+        
+        Automatically detects if the repository follows the structured format:
+        - Connector_Code/     → Implementation patterns
+        - Connector_SDK/      → SDK methods and types
+        - Public_Documentation/ → API docs, auth guides, rate limits
         
         Args:
             github_url: URL of the GitHub repository
@@ -414,8 +908,8 @@ class GitHubCloner:
         # Clone the repository
         repo_path = self.clone_repo(github_url, connector_id)
         
-        # Extract patterns
-        result = self.extract_patterns(repo_path)
+        # Extract patterns with structure detection
+        result = self.extract_structured_patterns(repo_path)
         result.repo_url = github_url
         
         return result

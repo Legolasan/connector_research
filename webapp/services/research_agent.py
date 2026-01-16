@@ -224,13 +224,138 @@ class ResearchAgent:
         except Exception as e:
             return f"Web search error: {str(e)}"
     
+    def _build_section_context(self, section_number: int, structured_context: Dict[str, Any]) -> str:
+        """Build section-specific context from structured repository data.
+        
+        Args:
+            section_number: The section number (1-18)
+            structured_context: Dict with 'implementation', 'sdk', 'documentation' keys
+            
+        Returns:
+            Formatted context string relevant to the section
+        """
+        parts = []
+        impl = structured_context.get('implementation', {})
+        sdk = structured_context.get('sdk', {})
+        docs = structured_context.get('documentation', {})
+        
+        # Section 4: Data Access Mechanisms
+        if section_number == 4:
+            if sdk.get('available_methods'):
+                parts.append(f"**SDK Available Methods:**\n{', '.join(sdk['available_methods'][:30])}")
+            if sdk.get('client_classes'):
+                parts.append(f"**SDK Client Classes:**\n{', '.join(sdk['client_classes'][:20])}")
+            if impl.get('api_calls'):
+                parts.append(f"**Implementation API Calls (from Connector_Code):**")
+                for call in impl['api_calls'][:10]:
+                    parts.append(f"  - {call[:200]}")
+            if docs.get('api_reference'):
+                parts.append(f"**From Public Documentation - API Reference:**\n{docs['api_reference'][:1500]}")
+        
+        # Section 5: Authentication Mechanics
+        elif section_number == 5:
+            if impl.get('auth_implementation'):
+                parts.append(f"**Current Auth Implementation (from Connector_Code):**\n```\n{impl['auth_implementation'][:2000]}\n```")
+            if sdk.get('auth_methods'):
+                parts.append(f"**SDK Auth Methods:**\n{', '.join(sdk['auth_methods'][:20])}")
+            if docs.get('auth_guide'):
+                parts.append(f"**From Public Documentation - Auth Guide:**\n{docs['auth_guide'][:1500]}")
+            if docs.get('permissions'):
+                parts.append(f"**Documented Permissions/Scopes:**\n{', '.join(docs['permissions'][:30])}")
+        
+        # Section 6: App Registration
+        elif section_number == 6:
+            if docs.get('auth_guide'):
+                parts.append(f"**From Public Documentation - Auth/Registration:**\n{docs['auth_guide'][:1500]}")
+        
+        # Section 7: Metadata Discovery & Schema
+        elif section_number == 7:
+            if sdk.get('data_types'):
+                parts.append(f"**SDK Data Types/Models:**\n{', '.join(sdk['data_types'][:50])}")
+            if impl.get('models'):
+                parts.append(f"**Implementation Models (from Connector_Code):**\n{', '.join(impl['models'][:30])}")
+            if docs.get('objects_schema'):
+                parts.append(f"**From Public Documentation - Objects/Schema:**\n{docs['objects_schema'][:2000]}")
+            if docs.get('endpoints_list'):
+                parts.append(f"**Documented Endpoints:**")
+                for ep in docs['endpoints_list'][:20]:
+                    parts.append(f"  - {ep}")
+        
+        # Section 8: Sync Strategies
+        elif section_number == 8:
+            if impl.get('sync_patterns'):
+                parts.append(f"**Sync Patterns Found in Implementation:**")
+                for pattern in impl['sync_patterns'][:15]:
+                    parts.append(f"  - {pattern[:150]}")
+        
+        # Section 9: Bulk Extraction & Pagination
+        elif section_number == 9:
+            if impl.get('sync_patterns'):
+                parts.append(f"**Pagination Patterns Found:**")
+                for pattern in impl['sync_patterns'][:10]:
+                    parts.append(f"  - {pattern[:150]}")
+            if impl.get('api_calls'):
+                bulk_calls = [c for c in impl['api_calls'] if 'bulk' in c.lower() or 'batch' in c.lower() or 'export' in c.lower()]
+                if bulk_calls:
+                    parts.append(f"**Bulk API Calls Found:**")
+                    for call in bulk_calls[:5]:
+                        parts.append(f"  - {call[:200]}")
+        
+        # Section 12: Rate Limits
+        elif section_number == 12:
+            if docs.get('rate_limits'):
+                parts.append(f"**From Public Documentation - Rate Limits:**\n{docs['rate_limits'][:1500]}")
+        
+        # Section 13: API Failure Types & Retry
+        elif section_number == 13:
+            if impl.get('error_handling'):
+                parts.append(f"**Error Handling Patterns in Implementation:**")
+                for err in impl['error_handling'][:10]:
+                    parts.append(f"  - {err[:150]}")
+        
+        # Section 15: Dependencies, Drivers & SDK
+        elif section_number == 15:
+            if sdk.get('sdk_name'):
+                parts.append(f"**SDK Name:** {sdk['sdk_name']}")
+            if sdk.get('client_classes'):
+                parts.append(f"**SDK Client Classes:**\n{', '.join(sdk['client_classes'][:20])}")
+            if sdk.get('constants'):
+                parts.append(f"**SDK Constants/Enums:**\n{', '.join(sdk['constants'][:30])}")
+        
+        # Section 17: Relationships
+        elif section_number == 17:
+            if impl.get('models'):
+                parts.append(f"**Models Found (potential relationships):**\n{', '.join(impl['models'][:30])}")
+            if sdk.get('data_types'):
+                parts.append(f"**SDK Data Types:**\n{', '.join(sdk['data_types'][:30])}")
+        
+        # Section 18: Troubleshooting
+        elif section_number == 18:
+            if impl.get('error_handling'):
+                parts.append(f"**Error Handling Found in Implementation:**")
+                for err in impl['error_handling'][:10]:
+                    parts.append(f"  - {err[:150]}")
+            if impl.get('config_patterns'):
+                parts.append(f"**Configuration Patterns:**")
+                for cfg in impl['config_patterns'][:10]:
+                    parts.append(f"  - {cfg}")
+        
+        # For other sections, provide general context if available
+        else:
+            if docs.get('raw_content') and section_number in [1, 2, 3]:
+                # Platform understanding sections can use general docs
+                parts.append(f"**From Public Documentation:**\n{docs['raw_content'][:1500]}")
+        
+        return "\n\n".join(parts) if parts else ""
+    
     async def _generate_section(
         self,
         section: ResearchSection,
         connector_name: str,
         connector_type: str,
         github_context: str = "",
-        fivetran_context: str = ""
+        fivetran_context: str = "",
+        structured_context: Optional[Dict[str, Any]] = None
     ) -> str:
         """Generate content for a single section.
         
@@ -238,8 +363,9 @@ class ResearchAgent:
             section: Section definition
             connector_name: Name of connector
             connector_type: Type of connector
-            github_context: Context from GitHub code analysis
+            github_context: Context from GitHub code analysis (legacy flat format)
             fivetran_context: Context from Fivetran comparison
+            structured_context: Structured context with implementation, sdk, and documentation
             
         Returns:
             Generated markdown content
@@ -259,9 +385,15 @@ Requirements:
 - Include exact values from documentation (OAuth scopes, permissions, rate limits)
 - Use markdown tables where appropriate
 - Include inline citations like [web:1], [web:2] referencing web search results
+- When structured context is provided (from Connector_Code, Connector_SDK, Public_Documentation), prioritize that information
 - Focus on data extraction (read operations), not write operations
 - If information is not available, explicitly state "N/A - not documented" or "N/A - not supported"
 """
+        
+        # Build section-specific context from structured data
+        section_context = ""
+        if structured_context:
+            section_context = self._build_section_context(section.number, structured_context)
 
         user_prompt = f"""Generate Section {section.number}: {section.name} for the {connector_name} connector research document.
 
@@ -276,6 +408,7 @@ Web Search Results:
 
 {f"GitHub Code Analysis Context:{chr(10)}{github_context}" if github_context else ""}
 {f"Fivetran Comparison Context:{chr(10)}{fivetran_context}" if fivetran_context else ""}
+{f"Structured Repository Context:{chr(10)}{section_context}" if section_context else ""}
 
 Generate comprehensive markdown content for this section. Include:
 1. Clear subsection headers (e.g., {section.number}.1, {section.number}.2)
@@ -348,6 +481,25 @@ Generate comprehensive markdown content for this section. Include:
             status="running"
         )
         
+        # Detect if we have structured context
+        is_structured = github_context and github_context.get('structure_type') == 'structured'
+        structured_context = None
+        
+        if is_structured:
+            structured_context = {
+                'implementation': github_context.get('implementation', {}),
+                'sdk': github_context.get('sdk', {}),
+                'documentation': github_context.get('documentation', {})
+            }
+        
+        # Build research method description
+        research_method_parts = ["Automated generation using web search"]
+        if github_context:
+            if is_structured:
+                research_method_parts.append("structured repository analysis (Connector_Code, Connector_SDK, Public_Documentation)")
+            else:
+                research_method_parts.append("GitHub code analysis")
+        
         # Initialize document
         document_parts = [f"""# Connector Research: {connector_name}
 
@@ -363,20 +515,36 @@ Generate comprehensive markdown content for this section. Include:
 
 **Connector Type:** {connector_type}
 
-**Research Method:** Automated generation using web search and {"GitHub code analysis" if github_context else "documentation only"}
+**Research Method:** {' and '.join(research_method_parts)}
+
+{f"**Repository Structure:** Structured (Connector_Code, Connector_SDK, Public_Documentation)" if is_structured else ""}
 
 ---
 """]
         
-        # Prepare GitHub context string
+        # Prepare GitHub context string (for legacy flat format)
         github_context_str = ""
-        if github_context:
+        if github_context and not is_structured:
             github_context_str = f"""
 Repository: {github_context.get('repo_url', 'N/A')}
 Languages: {', '.join(github_context.get('languages_detected', []))}
 Objects Found: {', '.join(github_context.get('object_types', [])[:20])}
 API Endpoints: {', '.join(github_context.get('api_endpoints', [])[:10])}
 Auth Patterns: {', '.join(github_context.get('auth_patterns', []))}
+"""
+        elif github_context and is_structured:
+            # Provide summary for structured repos
+            impl = structured_context.get('implementation', {})
+            sdk = structured_context.get('sdk', {})
+            docs = structured_context.get('documentation', {})
+            github_context_str = f"""
+Repository: {github_context.get('repo_url', 'N/A')}
+Structure: Structured Repository Format
+SDK Name: {sdk.get('sdk_name', 'N/A')}
+Implementation Models: {len(impl.get('models', []))} found
+SDK Methods: {len(sdk.get('available_methods', []))} found
+SDK Data Types: {len(sdk.get('data_types', []))} found
+Documentation Endpoints: {len(docs.get('endpoints_list', []))} documented
 """
         
         # Generate each section
@@ -406,7 +574,8 @@ Auth Patterns: {', '.join(github_context.get('auth_patterns', []))}
                 connector_name=connector_name,
                 connector_type=connector_type,
                 github_context=github_context_str if section.requires_code_analysis else "",
-                fivetran_context=fivetran_context
+                fivetran_context=fivetran_context,
+                structured_context=structured_context
             )
             
             document_parts.append(section_content)
@@ -456,7 +625,13 @@ This research document was generated using:
 """)
         
         if github_context:
-            document_parts.append(f"- GitHub repository analysis: {github_context.get('repo_url', 'N/A')}")
+            if is_structured:
+                document_parts.append(f"- Structured repository analysis: {github_context.get('repo_url', 'N/A')}")
+                document_parts.append("  - Connector_Code: Implementation patterns, API calls, auth flow")
+                document_parts.append("  - Connector_SDK: SDK methods, data types, client classes")
+                document_parts.append("  - Public_Documentation: API reference, auth guide, rate limits")
+            else:
+                document_parts.append(f"- GitHub repository analysis: {github_context.get('repo_url', 'N/A')}")
         
         document_parts.append(f"""
 
