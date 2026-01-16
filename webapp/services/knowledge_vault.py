@@ -29,7 +29,7 @@ from dotenv import load_dotenv
 
 from services.database import (
     get_db_session, is_database_available, init_database,
-    DocumentChunkModel, PGVECTOR_AVAILABLE, EMBEDDING_DIMENSION
+    DocumentChunkModel, PGVECTOR_AVAILABLE, PGVECTOR_EXTENSION_AVAILABLE, EMBEDDING_DIMENSION
 )
 
 load_dotenv()
@@ -165,7 +165,8 @@ class KnowledgeVault:
                 import traceback
                 traceback.print_exc()
         
-        self._pgvector_available = PGVECTOR_AVAILABLE and db_available
+        # Check if pgvector extension is actually available (not just the Python package)
+        self._pgvector_available = PGVECTOR_EXTENSION_AVAILABLE and db_available
         
         print("📚 Knowledge Vault initialized!")
         print(f"  DATABASE_URL present: {bool(db_url)}")

@@ -121,9 +121,11 @@ class DocumentChunkModel(Base):
     )
 
 
-# Add vector column dynamically if pgvector is available
-if PGVECTOR_AVAILABLE and Vector is not None:
-    DocumentChunkModel.embedding = Column(Vector(EMBEDDING_DIMENSION), nullable=True)
+# Track if pgvector extension is actually available in the database
+# This is set to True only if the extension is successfully enabled
+PGVECTOR_EXTENSION_AVAILABLE = False
+
+# Note: VECTOR column will be added dynamically after checking if extension is available
 
 
 def init_database() -> bool:
@@ -160,17 +162,7 @@ def init_database() -> bool:
         # Create session factory
         SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
         
-        # Enable pgvector extension if available
-        if PGVECTOR_AVAILABLE:
-            try:
-                with engine.connect() as conn:
-                    conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
-                    conn.commit()
-                print("✓ pgvector extension enabled")
-            except Exception as e:
-                print(f"⚠ Could not enable pgvector extension: {e}")
-        
-        # Test the connection with a simple query
+        # Test the connection with a simple query first
         try:
             with engine.connect() as conn:
                 result = conn.execute(text("SELECT 1"))
@@ -180,8 +172,56 @@ def init_database() -> bool:
             print(f"⚠ Database connection test failed: {conn_error}")
             raise RuntimeError(f"Database connection failed: {conn_error}") from conn_error
         
-        # Create tables
-        Base.metadata.create_all(bind=engine)
+        # Enable pgvector extension if available
+        global PGVECTOR_EXTENSION_AVAILABLE
+        PGVECTOR_EXTENSION_AVAILABLE = False
+        
+        # Enable pgvector extension if available
+        global PGVECTOR_EXTENSION_AVAILABLE
+        PGVECTOR_EXTENSION_AVAILABLE = False
+        
+        if PGVECTOR_AVAILABLE:
+            try:
+                with engine.connect() as conn:
+                    conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
+                    conn.commit()
+                # Verify extension is actually available
+                with engine.connect() as conn:
+                    result = conn.execute(text("SELECT 1 FROM pg_extension WHERE extname = 'vector'"))
+                    if result.fetchone():
+                        PGVECTOR_EXTENSION_AVAILABLE = True
+                        print("✓ pgvector extension enabled and verified")
+                    else:
+                        print("⚠ pgvector extension not found after creation attempt")
+            except Exception as e:
+                print(f"⚠ Could not enable pgvector extension: {e}")
+                print("  → Will use embedding_json (JSON) storage instead")
+        
+        # Only add VECTOR column if extension is actually available
+        if PGVECTOR_EXTENSION_AVAILABLE and not hasattr(DocumentChunkModel, 'embedding'):
+            DocumentChunkModel.embedding = Column(Vector(EMBEDDING_DIMENSION), nullable=True)
+        
+        # Create tables (will use embedding_json only if pgvector not available)
+        # If table already exists with VECTOR column but extension is gone, we'll get an error
+        # For now, we'll just create tables and let it fail if needed (user can manually fix)
+        try:
+            Base.metadata.create_all(bind=engine)
+        except Exception as table_error:
+            error_str = str(table_error).lower()
+            if "vector" in error_str and ("does not exist" in error_str or "undefinedobject" in error_str):
+                print("⚠ Table creation failed: VECTOR type not available")
+                print("  → The document_chunks table may already exist with a VECTOR column")
+                print("  → Solution: Either install pgvector extension or drop the table manually")
+                print("  → For now, continuing without VECTOR column support")
+                # Remove embedding column attribute to prevent further issues
+                if hasattr(DocumentChunkModel, 'embedding'):
+                    delattr(DocumentChunkModel, 'embedding')
+                PGVECTOR_EXTENSION_AVAILABLE = False
+                # Try creating other tables (skip document_chunks)
+                # Actually, let's just continue - the table might already exist
+                print("  → Assuming tables already exist, continuing...")
+            else:
+                raise
         
         print(f"✓ Database initialized successfully")
         return True

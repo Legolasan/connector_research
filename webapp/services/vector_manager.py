@@ -16,8 +16,8 @@ from sqlalchemy import text
 from dotenv import load_dotenv
 
 from services.database import (
-    get_db_session, is_database_available, 
-    DocumentChunkModel, PGVECTOR_AVAILABLE, EMBEDDING_DIMENSION
+    get_db_session, is_database_available,
+    DocumentChunkModel, PGVECTOR_AVAILABLE, PGVECTOR_EXTENSION_AVAILABLE, EMBEDDING_DIMENSION
 )
 
 load_dotenv()
@@ -44,7 +44,8 @@ class VectorManager:
             raise ValueError("OPENAI_API_KEY is required")
         
         self.openai = OpenAI(api_key=self.openai_api_key)
-        self._pgvector_available = PGVECTOR_AVAILABLE and is_database_available()
+        # Check if pgvector extension is actually available (not just the Python package)
+        self._pgvector_available = PGVECTOR_EXTENSION_AVAILABLE and is_database_available()
         
         if self._pgvector_available:
             print("✓ VectorManager using pgvector for embeddings")
