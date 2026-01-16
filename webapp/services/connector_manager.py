@@ -56,6 +56,35 @@ class ConnectorProgress:
 
 
 @dataclass
+class FivetranUrls:
+    """Fivetran documentation URLs for parity comparison."""
+    setup_guide_url: Optional[str] = None        # Setup Guide page (prerequisites, auth)
+    connector_overview_url: Optional[str] = None  # Connector Overview (features, sync modes)
+    schema_info_url: Optional[str] = None         # Schema Information (objects, ERD)
+    
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            'setup_guide_url': self.setup_guide_url,
+            'connector_overview_url': self.connector_overview_url,
+            'schema_info_url': self.schema_info_url
+        }
+    
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> 'FivetranUrls':
+        if data is None:
+            return None
+        return cls(
+            setup_guide_url=data.get('setup_guide_url'),
+            connector_overview_url=data.get('connector_overview_url'),
+            schema_info_url=data.get('schema_info_url')
+        )
+    
+    def has_urls(self) -> bool:
+        """Check if any Fivetran URLs are provided."""
+        return any([self.setup_guide_url, self.connector_overview_url, self.schema_info_url])
+
+
+@dataclass
 class Connector:
     """Represents a connector research project."""
     id: str  # slug, e.g., "facebook-ads"
@@ -64,6 +93,9 @@ class Connector:
     status: str = ConnectorStatus.NOT_STARTED.value
     github_url: Optional[str] = None
     description: str = ""
+    
+    # Fivetran parity URLs
+    fivetran_urls: Optional[FivetranUrls] = None
     
     # Metadata
     objects_count: int = 0
@@ -94,6 +126,9 @@ class Connector:
         # Convert progress to dict
         if isinstance(self.progress, ConnectorProgress):
             data['progress'] = asdict(self.progress)
+        # Convert fivetran_urls to dict
+        if isinstance(self.fivetran_urls, FivetranUrls):
+            data['fivetran_urls'] = self.fivetran_urls.to_dict()
         return data
     
     @classmethod
@@ -101,7 +136,11 @@ class Connector:
         """Create from dictionary."""
         progress_data = data.pop('progress', {})
         progress = ConnectorProgress(**progress_data) if progress_data else ConnectorProgress()
-        return cls(progress=progress, **data)
+        
+        fivetran_urls_data = data.pop('fivetran_urls', None)
+        fivetran_urls = FivetranUrls.from_dict(fivetran_urls_data) if fivetran_urls_data else None
+        
+        return cls(progress=progress, fivetran_urls=fivetran_urls, **data)
 
 
 class ConnectorManager:
@@ -176,6 +215,7 @@ class ConnectorManager:
         name: str,
         connector_type: str,
         github_url: Optional[str] = None,
+        fivetran_urls: Optional[FivetranUrls] = None,
         description: str = ""
     ) -> Connector:
         """Create a new connector research project.
@@ -184,6 +224,7 @@ class ConnectorManager:
             name: Display name for the connector
             connector_type: Type of connector (rest_api, graphql, etc.)
             github_url: Optional GitHub repository URL
+            fivetran_urls: Optional Fivetran documentation URLs for parity comparison
             description: Optional description
             
         Returns:
@@ -208,6 +249,7 @@ class ConnectorManager:
             name=name,
             connector_type=connector_type,
             github_url=github_url,
+            fivetran_urls=fivetran_urls,
             description=description
         )
         

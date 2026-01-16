@@ -17,20 +17,29 @@ from fastapi.templating import Jinja2Templates
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 
-from services.connector_manager import get_connector_manager, ConnectorManager, ConnectorStatus
+from services.connector_manager import get_connector_manager, ConnectorManager, ConnectorStatus, FivetranUrls
 from services.github_cloner import get_github_cloner, GitHubCloner
 from services.research_agent import get_research_agent, ResearchAgent
 from services.pinecone_manager import get_pinecone_manager, PineconeManager
+from services.fivetran_crawler import get_fivetran_crawler, FivetranCrawler
 
 
 # =====================
 # Request/Response Models
 # =====================
 
+class FivetranUrlsRequest(BaseModel):
+    """Fivetran documentation URLs for parity comparison."""
+    setup_guide_url: Optional[str] = None
+    connector_overview_url: Optional[str] = None
+    schema_info_url: Optional[str] = None
+
+
 class ConnectorCreateRequest(BaseModel):
     name: str
     connector_type: str
     github_url: Optional[str] = None
+    fivetran_urls: Optional[FivetranUrlsRequest] = None
     description: str = ""
 
 
@@ -43,12 +52,20 @@ class ConnectorProgressResponse(BaseModel):
     current_section_name: str
 
 
+class FivetranUrlsResponse(BaseModel):
+    """Fivetran URLs in response."""
+    setup_guide_url: Optional[str] = None
+    connector_overview_url: Optional[str] = None
+    schema_info_url: Optional[str] = None
+
+
 class ConnectorResponse(BaseModel):
     id: str
     name: str
     connector_type: str
     status: str
     github_url: Optional[str]
+    fivetran_urls: Optional[FivetranUrlsResponse]
     description: str
     objects_count: int
     vectors_count: int
@@ -103,6 +120,7 @@ connector_manager: Optional[ConnectorManager] = None
 github_cloner: Optional[GitHubCloner] = None
 research_agent: Optional[ResearchAgent] = None
 pinecone_manager: Optional[PineconeManager] = None
+fivetran_crawler: Optional[FivetranCrawler] = None
 
 # Background tasks tracking
 _running_research_tasks: Dict[str, asyncio.Task] = {}
@@ -111,7 +129,7 @@ _running_research_tasks: Dict[str, asyncio.Task] = {}
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Initialize services on startup."""
-    global connector_manager, github_cloner, research_agent, pinecone_manager
+    global connector_manager, github_cloner, research_agent, pinecone_manager, fivetran_crawler
     
     # Initialize connector services
     try:
@@ -141,6 +159,13 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         print(f"⚠ Pinecone Manager not available: {e}")
         pinecone_manager = None
+    
+    try:
+        fivetran_crawler = get_fivetran_crawler()
+        print("✓ Fivetran Crawler initialized")
+    except Exception as e:
+        print(f"⚠ Fivetran Crawler not available: {e}")
+        fivetran_crawler = None
     
     yield
     
@@ -191,7 +216,8 @@ async def health_check():
             "connector_manager": connector_manager is not None,
             "github_cloner": github_cloner is not None,
             "research_agent": research_agent is not None,
-            "pinecone_manager": pinecone_manager is not None
+            "pinecone_manager": pinecone_manager is not None,
+            "fivetran_crawler": fivetran_crawler is not None
         }
     }
 
@@ -202,12 +228,21 @@ async def health_check():
 
 def _connector_to_response(connector) -> ConnectorResponse:
     """Convert Connector object to response model."""
+    fivetran_urls_response = None
+    if connector.fivetran_urls:
+        fivetran_urls_response = FivetranUrlsResponse(
+            setup_guide_url=connector.fivetran_urls.setup_guide_url,
+            connector_overview_url=connector.fivetran_urls.connector_overview_url,
+            schema_info_url=connector.fivetran_urls.schema_info_url
+        )
+    
     return ConnectorResponse(
         id=connector.id,
         name=connector.name,
         connector_type=connector.connector_type,
         status=connector.status,
         github_url=connector.github_url,
+        fivetran_urls=fivetran_urls_response,
         description=connector.description,
         objects_count=connector.objects_count,
         vectors_count=connector.vectors_count,
@@ -247,10 +282,20 @@ async def create_connector(request: ConnectorCreateRequest):
         raise HTTPException(status_code=503, detail="Connector Manager not initialized")
     
     try:
+        # Convert FivetranUrlsRequest to FivetranUrls if provided
+        fivetran_urls = None
+        if request.fivetran_urls:
+            fivetran_urls = FivetranUrls(
+                setup_guide_url=request.fivetran_urls.setup_guide_url,
+                connector_overview_url=request.fivetran_urls.connector_overview_url,
+                schema_info_url=request.fivetran_urls.schema_info_url
+            )
+        
         connector = connector_manager.create_connector(
             name=request.name,
             connector_type=request.connector_type,
             github_url=request.github_url,
+            fivetran_urls=fivetran_urls,
             description=request.description
         )
         return _connector_to_response(connector)
@@ -318,12 +363,23 @@ async def generate_research(connector_id: str, background_tasks: BackgroundTasks
         """Background task to run research generation."""
         try:
             github_context = None
+            fivetran_context = None
             
             # Clone GitHub repo if URL provided
             if connector.github_url and github_cloner:
                 connector_manager.update_connector(connector_id, status=ConnectorStatus.CLONING.value)
                 extracted = await github_cloner.clone_and_extract(connector.github_url, connector_id)
                 github_context = extracted.to_dict()
+            
+            # Crawl Fivetran documentation if URLs provided
+            if connector.fivetran_urls and connector.fivetran_urls.has_urls() and fivetran_crawler:
+                print(f"Crawling Fivetran documentation for {connector.name}...")
+                fivetran_result = await fivetran_crawler.crawl_all(
+                    setup_url=connector.fivetran_urls.setup_guide_url,
+                    overview_url=connector.fivetran_urls.connector_overview_url,
+                    schema_url=connector.fivetran_urls.schema_info_url
+                )
+                fivetran_context = fivetran_result.to_dict()
             
             # Update status to researching
             connector_manager.update_connector(connector_id, status=ConnectorStatus.RESEARCHING.value)
@@ -342,6 +398,7 @@ async def generate_research(connector_id: str, background_tasks: BackgroundTasks
                 connector_name=connector.name,
                 connector_type=connector.connector_type,
                 github_context=github_context,
+                fivetran_context=fivetran_context,
                 on_progress=on_progress
             )
             

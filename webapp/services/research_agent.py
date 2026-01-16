@@ -348,6 +348,98 @@ class ResearchAgent:
         
         return "\n\n".join(parts) if parts else ""
     
+    def _build_fivetran_section_context(self, section_number: int, fivetran_context: Dict[str, Any]) -> str:
+        """Build section-specific context from Fivetran documentation.
+        
+        Args:
+            section_number: The section number (1-18)
+            fivetran_context: Dict with 'setup', 'overview', 'schema' keys from FivetranCrawler
+            
+        Returns:
+            Formatted context string relevant to the section
+        """
+        parts = []
+        setup = fivetran_context.get('setup', {})
+        overview = fivetran_context.get('overview', {})
+        schema = fivetran_context.get('schema', {})
+        
+        # Section 1: Product Overview - Use overview features
+        if section_number == 1:
+            if overview.get('supported_features'):
+                features = [f"{k.replace('_', ' ').title()}: {'Yes' if v else 'No'}" 
+                           for k, v in overview['supported_features'].items()]
+                parts.append(f"**Fivetran Supported Features:**\n{', '.join(features)}")
+            if overview.get('sync_overview'):
+                parts.append(f"**Fivetran Sync Overview:**\n{overview['sync_overview'][:1500]}")
+        
+        # Section 3: Pre-Call Config - Use setup prerequisites
+        elif section_number == 3:
+            if setup.get('prerequisites'):
+                parts.append(f"**Fivetran Prerequisites:**")
+                for prereq in setup['prerequisites'][:10]:
+                    parts.append(f"  - {prereq}")
+        
+        # Section 5: Authentication - Use setup auth methods and instructions
+        elif section_number == 5:
+            if setup.get('auth_methods'):
+                parts.append(f"**Fivetran Auth Methods:**\n{', '.join(setup['auth_methods'])}")
+            if setup.get('auth_instructions'):
+                parts.append(f"**Fivetran Auth Instructions:**\n{setup['auth_instructions'][:2000]}")
+        
+        # Section 6: App Registration - Use setup auth instructions
+        elif section_number == 6:
+            if setup.get('auth_instructions'):
+                parts.append(f"**Fivetran Setup Instructions:**\n{setup['auth_instructions'][:1500]}")
+        
+        # Section 7: Metadata Discovery - Use schema objects
+        elif section_number == 7:
+            if schema.get('supported_objects'):
+                parts.append(f"**Fivetran Supported Objects ({len(schema['supported_objects'])}):**")
+                parts.append(f"{', '.join(schema['supported_objects'][:50])}")
+            if schema.get('unsupported_objects'):
+                parts.append(f"**Fivetran Unsupported Objects:**\n{', '.join(schema['unsupported_objects'][:20])}")
+            if schema.get('permissions_required'):
+                parts.append(f"**Fivetran Permissions Required:**")
+                for obj, perms in list(schema['permissions_required'].items())[:10]:
+                    parts.append(f"  - {obj}: {', '.join(perms)}")
+        
+        # Section 8: Sync Strategies - Use overview sync details and schema object sync modes
+        elif section_number == 8:
+            if overview.get('incremental_sync_details'):
+                parts.append(f"**Fivetran Incremental Sync:**\n{overview['incremental_sync_details'][:1500]}")
+            if overview.get('historical_sync_timeframe'):
+                parts.append(f"**Fivetran Historical Sync Timeframe:** {overview['historical_sync_timeframe']}")
+            if schema.get('objects'):
+                incremental_objs = [o['name'] for o in schema['objects'] if o.get('sync_mode') == 'incremental']
+                full_objs = [o['name'] for o in schema['objects'] if o.get('sync_mode') == 'full_load']
+                if incremental_objs:
+                    parts.append(f"**Fivetran Incremental Objects:** {', '.join(incremental_objs[:20])}")
+                if full_objs:
+                    parts.append(f"**Fivetran Full Load Objects:** {', '.join(full_objs[:20])}")
+        
+        # Section 11: Deletion Handling - Use overview capture_deletes feature
+        elif section_number == 11:
+            if overview.get('supported_features'):
+                capture_deletes = overview['supported_features'].get('capture_deletes')
+                if capture_deletes is not None:
+                    parts.append(f"**Fivetran Capture Deletes:** {'Supported' if capture_deletes else 'Not Supported'}")
+        
+        # Section 17: Relationships - Use schema parent-child relationships
+        elif section_number == 17:
+            if schema.get('parent_child_relationships'):
+                parts.append(f"**Fivetran Parent-Child Relationships:**")
+                for parent, child in schema['parent_child_relationships'][:20]:
+                    parts.append(f"  - {parent} → {child}")
+        
+        # Section 18: Troubleshooting - Use overview limitations
+        elif section_number == 18:
+            if overview.get('sync_limitations'):
+                parts.append(f"**Fivetran Known Limitations:**")
+                for lim in overview['sync_limitations'][:10]:
+                    parts.append(f"  - {lim}")
+        
+        return "\n\n".join(parts) if parts else ""
+    
     async def _generate_section(
         self,
         section: ResearchSection,
@@ -460,6 +552,7 @@ Generate comprehensive markdown content for this section. Include:
         connector_name: str,
         connector_type: str,
         github_context: Optional[Dict[str, Any]] = None,
+        fivetran_context: Optional[Dict[str, Any]] = None,
         on_progress: Optional[Callable[[ResearchProgress], None]] = None
     ) -> str:
         """Generate complete research document for a connector.
@@ -469,6 +562,7 @@ Generate comprehensive markdown content for this section. Include:
             connector_name: Connector display name
             connector_type: Type of connector
             github_context: Optional extracted code patterns from GitHub
+            fivetran_context: Optional Fivetran documentation context for parity comparison
             on_progress: Optional callback for progress updates
             
         Returns:
@@ -499,6 +593,8 @@ Generate comprehensive markdown content for this section. Include:
                 research_method_parts.append("structured repository analysis (Connector_Code, Connector_SDK, Public_Documentation)")
             else:
                 research_method_parts.append("GitHub code analysis")
+        if fivetran_context:
+            research_method_parts.append("Fivetran documentation parity analysis")
         
         # Initialize document
         document_parts = [f"""# Connector Research: {connector_name}
@@ -560,13 +656,17 @@ Documentation Endpoints: {len(docs.get('endpoints_list', []))} documented
             if on_progress:
                 on_progress(self._current_progress)
             
-            # Get Fivetran context if needed
-            fivetran_context = ""
-            if section.requires_fivetran:
+            # Build Fivetran context for this section
+            section_fivetran_context = ""
+            if fivetran_context:
+                # Use provided Fivetran documentation context
+                section_fivetran_context = self._build_fivetran_section_context(section.number, fivetran_context)
+            elif section.requires_fivetran:
+                # Fallback to web search if no Fivetran URLs were provided
                 fivetran_search = await self._web_search(
                     f"Fivetran {connector_name} connector ERD objects supported"
                 )
-                fivetran_context = fivetran_search
+                section_fivetran_context = fivetran_search
             
             # Generate section
             section_content = await self._generate_section(
@@ -574,7 +674,7 @@ Documentation Endpoints: {len(docs.get('endpoints_list', []))} documented
                 connector_name=connector_name,
                 connector_type=connector_type,
                 github_context=github_context_str if section.requires_code_analysis else "",
-                fivetran_context=fivetran_context,
+                fivetran_context=section_fivetran_context,
                 structured_context=structured_context
             )
             
@@ -632,6 +732,15 @@ This research document was generated using:
                 document_parts.append("  - Public_Documentation: API reference, auth guide, rate limits")
             else:
                 document_parts.append(f"- GitHub repository analysis: {github_context.get('repo_url', 'N/A')}")
+        
+        if fivetran_context:
+            document_parts.append("- Fivetran documentation parity analysis:")
+            if fivetran_context.get('has_setup'):
+                document_parts.append("  - Setup Guide: Prerequisites, authentication methods")
+            if fivetran_context.get('has_overview'):
+                document_parts.append("  - Connector Overview: Supported features, sync strategies")
+            if fivetran_context.get('has_schema'):
+                document_parts.append("  - Schema Information: Objects, parent-child relationships")
         
         document_parts.append(f"""
 

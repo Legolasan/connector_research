@@ -19,11 +19,17 @@ function dashboard() {
         connectorsLoading: false,
         connectorsLoaded: false,
         showNewConnectorModal: false,
+        showFivetranInputs: false,
         isCreatingConnector: false,
         newConnector: {
             name: '',
             type: 'rest_api',
             github_url: '',
+            fivetran_urls: {
+                setup_guide_url: '',
+                connector_overview_url: '',
+                schema_info_url: ''
+            },
             description: ''
         },
         connectorTypes: [
@@ -75,6 +81,17 @@ function dashboard() {
             this.isCreatingConnector = true;
             
             try {
+                // Build fivetran_urls only if at least one URL is provided
+                let fivetranUrls = null;
+                const fUrls = this.newConnector.fivetran_urls;
+                if (fUrls.setup_guide_url || fUrls.connector_overview_url || fUrls.schema_info_url) {
+                    fivetranUrls = {
+                        setup_guide_url: fUrls.setup_guide_url || null,
+                        connector_overview_url: fUrls.connector_overview_url || null,
+                        schema_info_url: fUrls.schema_info_url || null
+                    };
+                }
+                
                 const response = await fetch('/api/connectors', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -82,6 +99,7 @@ function dashboard() {
                         name: this.newConnector.name,
                         connector_type: this.newConnector.type,
                         github_url: this.newConnector.github_url || null,
+                        fivetran_urls: fivetranUrls,
                         description: this.newConnector.description || ''
                     })
                 });
@@ -90,7 +108,18 @@ function dashboard() {
                     const connector = await response.json();
                     this.connectors.push(connector);
                     this.showNewConnectorModal = false;
-                    this.newConnector = { name: '', type: 'rest_api', github_url: '', description: '' };
+                    this.showFivetranInputs = false;
+                    this.newConnector = { 
+                        name: '', 
+                        type: 'rest_api', 
+                        github_url: '', 
+                        fivetran_urls: {
+                            setup_guide_url: '',
+                            connector_overview_url: '',
+                            schema_info_url: ''
+                        },
+                        description: '' 
+                    };
                     
                     // Optionally auto-start research
                     if (confirm('Connector created! Start research generation now?')) {
