@@ -131,6 +131,19 @@ async def lifespan(app: FastAPI):
     """Initialize services on startup."""
     global connector_manager, github_cloner, research_agent, pinecone_manager, fivetran_crawler
     
+    # Initialize database first (if DATABASE_URL is set)
+    if os.getenv("DATABASE_URL"):
+        try:
+            from services.database import init_database
+            if init_database():
+                print("✓ Database initialized")
+            else:
+                print("⚠ Database initialization returned False, using file storage")
+        except Exception as e:
+            print(f"⚠ Database initialization failed: {e}")
+    else:
+        print("ℹ DATABASE_URL not set, using file-based storage")
+    
     # Initialize connector services
     try:
         connector_manager = get_connector_manager()
@@ -402,11 +415,8 @@ async def generate_research(connector_id: str, background_tasks: BackgroundTasks
                 on_progress=on_progress
             )
             
-            # Save research document
-            doc_path = connector_manager.get_research_document_path(connector_id)
-            if doc_path:
-                with open(doc_path, 'w') as f:
-                    f.write(research_content)
+            # Save research document (supports both database and file storage)
+            connector_manager.save_research_document(connector_id, research_content)
             
             # Vectorize into Pinecone
             vectors_count = 0

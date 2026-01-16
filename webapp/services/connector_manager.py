@@ -1,6 +1,7 @@
 """
 Connector Manager Service
 Handles CRUD operations for connector research projects.
+Supports both database (PostgreSQL) and file-based storage.
 """
 
 import os
@@ -134,9 +135,14 @@ class Connector:
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'Connector':
         """Create from dictionary."""
+        # Handle progress
         progress_data = data.pop('progress', {})
-        progress = ConnectorProgress(**progress_data) if progress_data else ConnectorProgress()
+        if isinstance(progress_data, dict):
+            progress = ConnectorProgress(**progress_data) if progress_data else ConnectorProgress()
+        else:
+            progress = ConnectorProgress()
         
+        # Handle fivetran_urls
         fivetran_urls_data = data.pop('fivetran_urls', None)
         fivetran_urls = FivetranUrls.from_dict(fivetran_urls_data) if fivetran_urls_data else None
         
@@ -144,52 +150,68 @@ class Connector:
 
 
 class ConnectorManager:
-    """Manages connector research projects."""
+    """Manages connector research projects with database or file-based storage."""
     
     def __init__(self, base_dir: Optional[Path] = None):
         """Initialize the connector manager.
         
-        Args:
-            base_dir: Base directory for connector research files.
-                     Defaults to /tmp/connectors on Railway, local connectors/ otherwise
+        Uses DATABASE_URL for PostgreSQL storage if available,
+        otherwise falls back to file-based storage.
         """
-        if base_dir is None:
-            # Use CONNECTOR_DATA_DIR env var if set
-            env_dir = os.getenv("CONNECTOR_DATA_DIR")
-            if env_dir:
-                base_dir = Path(env_dir)
-            elif os.getenv("RAILWAY_ENVIRONMENT") or os.getenv("PORT"):
-                # On Railway or production (PORT is set), use /tmp which is always writable
-                base_dir = Path("/tmp/connectors")
-            else:
-                # Local development
-                base_dir = Path(__file__).parent.parent.parent / "connectors"
+        # Check for database availability
+        self._use_database = False
+        self._db_storage = None
         
-        self.base_dir = Path(base_dir)
-        self.registry_file = self.base_dir / "_agent" / "connectors_registry.json"
+        if os.getenv("DATABASE_URL"):
+            try:
+                from services.database import init_database, get_database_storage, is_database_available
+                
+                # Initialize database
+                if init_database():
+                    self._db_storage = get_database_storage()
+                    if self._db_storage:
+                        self._use_database = True
+                        print("✓ ConnectorManager using PostgreSQL database storage")
+            except Exception as e:
+                print(f"⚠ Database initialization failed, using file storage: {e}")
         
-        # Ensure directories exist with error handling
-        try:
-            self.base_dir.mkdir(parents=True, exist_ok=True)
-            (self.base_dir / "_agent").mkdir(exist_ok=True)
-            (self.base_dir / "_templates").mkdir(exist_ok=True)
-            print(f"✓ ConnectorManager data directory: {self.base_dir}")
-        except Exception as e:
-            print(f"⚠ Could not create directories at {self.base_dir}: {e}")
-            # Fallback to /tmp
-            self.base_dir = Path("/tmp/connectors")
+        # Setup file-based storage as fallback
+        if not self._use_database:
+            if base_dir is None:
+                env_dir = os.getenv("CONNECTOR_DATA_DIR")
+                if env_dir:
+                    base_dir = Path(env_dir)
+                elif os.getenv("RAILWAY_ENVIRONMENT") or os.getenv("PORT"):
+                    base_dir = Path("/tmp/connectors")
+                else:
+                    base_dir = Path(__file__).parent.parent.parent / "connectors"
+            
+            self.base_dir = Path(base_dir)
             self.registry_file = self.base_dir / "_agent" / "connectors_registry.json"
-            self.base_dir.mkdir(parents=True, exist_ok=True)
-            (self.base_dir / "_agent").mkdir(exist_ok=True)
-            (self.base_dir / "_templates").mkdir(exist_ok=True)
-            print(f"✓ Using fallback directory: {self.base_dir}")
-        
-        # Load or initialize registry
-        self._registry: Dict[str, Connector] = {}
-        self._load_registry()
+            
+            try:
+                self.base_dir.mkdir(parents=True, exist_ok=True)
+                (self.base_dir / "_agent").mkdir(exist_ok=True)
+                (self.base_dir / "_templates").mkdir(exist_ok=True)
+                print(f"✓ ConnectorManager using file storage: {self.base_dir}")
+            except Exception as e:
+                print(f"⚠ Could not create directories at {self.base_dir}: {e}")
+                self.base_dir = Path("/tmp/connectors")
+                self.registry_file = self.base_dir / "_agent" / "connectors_registry.json"
+                self.base_dir.mkdir(parents=True, exist_ok=True)
+                (self.base_dir / "_agent").mkdir(exist_ok=True)
+                (self.base_dir / "_templates").mkdir(exist_ok=True)
+                print(f"✓ Using fallback directory: {self.base_dir}")
+            
+            # Load file-based registry
+            self._registry: Dict[str, Connector] = {}
+            self._load_registry()
     
     def _load_registry(self):
-        """Load connector registry from file."""
+        """Load connector registry from file (file-based mode only)."""
+        if self._use_database:
+            return
+        
         if self.registry_file.exists():
             try:
                 with open(self.registry_file, 'r') as f:
@@ -203,7 +225,10 @@ class ConnectorManager:
             self._registry = {}
     
     def _save_registry(self):
-        """Save connector registry to file."""
+        """Save connector registry to file (file-based mode only)."""
+        if self._use_database:
+            return
+        
         data = {
             'connectors': {
                 connector_id: connector.to_dict()
@@ -220,12 +245,9 @@ class ConnectorManager:
     
     def _generate_id(self, name: str) -> str:
         """Generate a URL-safe ID from connector name."""
-        # Convert to lowercase, replace spaces with hyphens
         slug = name.lower().strip()
         slug = slug.replace(' ', '-')
-        # Remove non-alphanumeric characters except hyphens
         slug = ''.join(c for c in slug if c.isalnum() or c == '-')
-        # Remove multiple consecutive hyphens
         while '--' in slug:
             slug = slug.replace('--', '-')
         return slug.strip('-')
@@ -238,52 +260,80 @@ class ConnectorManager:
         fivetran_urls: Optional[FivetranUrls] = None,
         description: str = ""
     ) -> Connector:
-        """Create a new connector research project.
-        
-        Args:
-            name: Display name for the connector
-            connector_type: Type of connector (rest_api, graphql, etc.)
-            github_url: Optional GitHub repository URL
-            fivetran_urls: Optional Fivetran documentation URLs for parity comparison
-            description: Optional description
-            
-        Returns:
-            The created Connector object
-            
-        Raises:
-            ValueError: If connector with same ID already exists
-        """
+        """Create a new connector research project."""
         connector_id = self._generate_id(name)
         
-        if connector_id in self._registry:
-            raise ValueError(f"Connector '{connector_id}' already exists")
+        # Prepare connector data
+        connector_data = {
+            'id': connector_id,
+            'name': name,
+            'connector_type': connector_type,
+            'status': ConnectorStatus.NOT_STARTED.value,
+            'github_url': github_url,
+            'description': description,
+            'fivetran_urls': fivetran_urls.to_dict() if fivetran_urls else None,
+            'objects_count': 0,
+            'vectors_count': 0,
+            'fivetran_parity': None,
+            'progress': {
+                'current_section': 0,
+                'total_sections': 18,
+                'current_phase': 0,
+                'sections_completed': [],
+                'sections_failed': [],
+                'current_section_name': '',
+                'research_method': {}
+            },
+            'created_at': datetime.utcnow().isoformat(),
+            'updated_at': datetime.utcnow().isoformat(),
+            'completed_at': None,
+            'sources': [],
+            'pinecone_index': f"{connector_id}-docs"
+        }
         
-        # Create connector directory
-        connector_dir = self.base_dir / connector_id
-        connector_dir.mkdir(exist_ok=True)
-        (connector_dir / "sources").mkdir(exist_ok=True)
-        
-        # Create connector object
-        connector = Connector(
-            id=connector_id,
-            name=name,
-            connector_type=connector_type,
-            github_url=github_url,
-            fivetran_urls=fivetran_urls,
-            description=description
-        )
-        
-        # Save to registry
-        self._registry[connector_id] = connector
-        self._save_registry()
-        
-        # Create empty research document
-        self._create_research_document(connector)
-        
-        return connector
+        if self._use_database:
+            # Check if exists
+            existing = self._db_storage.get_connector(connector_id)
+            if existing:
+                raise ValueError(f"Connector '{connector_id}' already exists")
+            
+            # Create in database
+            result = self._db_storage.create_connector(connector_data)
+            if not result:
+                raise ValueError("Failed to create connector in database")
+            
+            return Connector.from_dict(result)
+        else:
+            # File-based storage
+            if connector_id in self._registry:
+                raise ValueError(f"Connector '{connector_id}' already exists")
+            
+            # Create connector directory
+            connector_dir = self.base_dir / connector_id
+            connector_dir.mkdir(exist_ok=True)
+            (connector_dir / "sources").mkdir(exist_ok=True)
+            
+            # Create connector object
+            connector = Connector(
+                id=connector_id,
+                name=name,
+                connector_type=connector_type,
+                github_url=github_url,
+                fivetran_urls=fivetran_urls,
+                description=description
+            )
+            
+            self._registry[connector_id] = connector
+            self._save_registry()
+            self._create_research_document(connector)
+            
+            return connector
     
     def _create_research_document(self, connector: Connector):
-        """Create initial research document from template."""
+        """Create initial research document (file-based mode only)."""
+        if self._use_database:
+            return
+        
         template_path = self.base_dir / "_templates" / "connector-research-template.md"
         output_path = self.base_dir / connector.id / f"{connector.id}-research.md"
         
@@ -291,25 +341,12 @@ class ConnectorManager:
             with open(template_path, 'r') as f:
                 template = f.read()
             
-            # Replace placeholders
             content = template.replace('<CONNECTOR_NAME>', connector.name)
             content = content.replace('<DATE>', datetime.utcnow().strftime('%Y-%m-%d'))
-            
-            # Mark connector type
-            type_markers = {
-                'rest_api': 'API-based (REST/GraphQL/SOAP)',
-                'graphql': 'API-based (REST/GraphQL/SOAP)',
-                'soap': 'API-based (REST/GraphQL/SOAP)',
-                'jdbc': 'Driver-based (JDBC/ODBC/ADO.NET)',
-                'sdk': 'SDK-based (official vendor SDK)',
-                'webhook': 'Webhook-only',
-                'advertising': 'Advertising Platform (Facebook Ads/Google Ads)',
-            }
             
             with open(output_path, 'w') as f:
                 f.write(content)
         else:
-            # Create minimal document if template doesn't exist
             content = f"""# Connector Research: {connector.name}
 
 **Subject:** {connector.name} Connector - Full Production Research  
@@ -337,40 +374,49 @@ class ConnectorManager:
     
     def get_connector(self, connector_id: str) -> Optional[Connector]:
         """Get a connector by ID."""
-        return self._registry.get(connector_id)
+        if self._use_database:
+            data = self._db_storage.get_connector(connector_id)
+            if data:
+                return Connector.from_dict(data)
+            return None
+        else:
+            return self._registry.get(connector_id)
     
     def list_connectors(self) -> List[Connector]:
         """List all connectors."""
-        return list(self._registry.values())
+        if self._use_database:
+            connectors_data = self._db_storage.list_connectors()
+            return [Connector.from_dict(data) for data in connectors_data]
+        else:
+            return list(self._registry.values())
     
     def update_connector(self, connector_id: str, **updates) -> Optional[Connector]:
-        """Update connector properties.
-        
-        Args:
-            connector_id: ID of connector to update
-            **updates: Fields to update
-            
-        Returns:
-            Updated Connector or None if not found
-        """
-        connector = self._registry.get(connector_id)
-        if not connector:
-            return None
-        
-        # Update allowed fields
+        """Update connector properties."""
         allowed_fields = {
             'name', 'description', 'status', 'objects_count', 
             'vectors_count', 'fivetran_parity', 'sources', 'completed_at'
         }
         
-        for key, value in updates.items():
-            if key in allowed_fields and hasattr(connector, key):
-                setattr(connector, key, value)
+        # Filter to allowed fields
+        filtered_updates = {k: v for k, v in updates.items() if k in allowed_fields}
+        filtered_updates['updated_at'] = datetime.utcnow().isoformat()
         
-        connector.updated_at = datetime.utcnow().isoformat()
-        self._save_registry()
-        
-        return connector
+        if self._use_database:
+            result = self._db_storage.update_connector(connector_id, filtered_updates)
+            if result:
+                return Connector.from_dict(result)
+            return None
+        else:
+            connector = self._registry.get(connector_id)
+            if not connector:
+                return None
+            
+            for key, value in filtered_updates.items():
+                if hasattr(connector, key):
+                    setattr(connector, key, value)
+            
+            self._save_registry()
+            return connector
     
     def update_progress(
         self,
@@ -381,20 +427,8 @@ class ConnectorManager:
         completed: bool = False,
         failed: bool = False
     ) -> Optional[Connector]:
-        """Update research progress for a connector.
-        
-        Args:
-            connector_id: ID of connector
-            section: Section number (1-18)
-            section_name: Name of current section
-            method: Research method used (context7, github, web_search)
-            completed: Whether section was completed
-            failed: Whether section failed
-            
-        Returns:
-            Updated Connector or None if not found
-        """
-        connector = self._registry.get(connector_id)
+        """Update research progress for a connector."""
+        connector = self.get_connector(connector_id)
         if not connector:
             return None
         
@@ -403,7 +437,7 @@ class ConnectorManager:
         progress.current_section_name = section_name
         progress.research_method[section] = method
         
-        # Calculate phase (sections grouped by 3-4)
+        # Calculate phase
         phase_map = {
             1: 1, 2: 1, 3: 1,
             4: 2, 5: 2, 6: 2, 7: 2,
@@ -421,42 +455,56 @@ class ConnectorManager:
         if failed and section not in progress.sections_failed:
             progress.sections_failed.append(section)
         
-        # Update status based on progress
+        # Determine new status
+        new_status = connector.status
+        completed_at = connector.completed_at
+        
         if len(progress.sections_completed) == progress.total_sections:
-            connector.status = ConnectorStatus.COMPLETE.value
-            connector.completed_at = datetime.utcnow().isoformat()
+            new_status = ConnectorStatus.COMPLETE.value
+            completed_at = datetime.utcnow().isoformat()
         elif len(progress.sections_completed) > 0 or progress.current_section > 0:
-            connector.status = ConnectorStatus.RESEARCHING.value
+            new_status = ConnectorStatus.RESEARCHING.value
         
-        connector.updated_at = datetime.utcnow().isoformat()
-        self._save_registry()
-        
-        return connector
+        if self._use_database:
+            updates = {
+                'progress': asdict(progress),
+                'status': new_status,
+                'completed_at': completed_at,
+                'updated_at': datetime.utcnow().isoformat()
+            }
+            result = self._db_storage.update_connector(connector_id, updates)
+            if result:
+                return Connector.from_dict(result)
+            return None
+        else:
+            connector.status = new_status
+            connector.completed_at = completed_at
+            connector.updated_at = datetime.utcnow().isoformat()
+            self._save_registry()
+            return connector
     
     def delete_connector(self, connector_id: str) -> bool:
-        """Delete a connector and its files.
-        
-        Args:
-            connector_id: ID of connector to delete
+        """Delete a connector."""
+        if self._use_database:
+            return self._db_storage.delete_connector(connector_id)
+        else:
+            if connector_id not in self._registry:
+                return False
             
-        Returns:
-            True if deleted, False if not found
-        """
-        if connector_id not in self._registry:
-            return False
-        
-        # Remove from registry
-        del self._registry[connector_id]
-        self._save_registry()
-        
-        # Note: We don't delete the directory to preserve any work
-        # User can manually delete if needed
-        
-        return True
+            del self._registry[connector_id]
+            self._save_registry()
+            return True
     
     def get_connector_dir(self, connector_id: str) -> Optional[Path]:
-        """Get the directory path for a connector."""
-        if connector_id in self._registry:
+        """Get the directory path for a connector (file-based mode only)."""
+        if self._use_database:
+            # For database mode, create a temp directory if needed
+            temp_dir = Path("/tmp/connectors") / connector_id
+            temp_dir.mkdir(parents=True, exist_ok=True)
+            return temp_dir
+        
+        connector = self.get_connector(connector_id)
+        if connector:
             return self.base_dir / connector_id
         return None
     
@@ -469,33 +517,38 @@ class ConnectorManager:
     
     def get_research_document(self, connector_id: str) -> Optional[str]:
         """Get the content of a connector's research document."""
-        doc_path = self.get_research_document_path(connector_id)
-        if doc_path and doc_path.exists():
-            with open(doc_path, 'r') as f:
-                return f.read()
-        return None
+        if self._use_database:
+            return self._db_storage.get_research_document(connector_id)
+        else:
+            doc_path = self.get_research_document_path(connector_id)
+            if doc_path and doc_path.exists():
+                with open(doc_path, 'r') as f:
+                    return f.read()
+            return None
+    
+    def save_research_document(self, connector_id: str, content: str) -> bool:
+        """Save research document content."""
+        if self._use_database:
+            return self._db_storage.save_research_document(connector_id, content)
+        else:
+            doc_path = self.get_research_document_path(connector_id)
+            if not doc_path:
+                return False
+            
+            try:
+                doc_path.parent.mkdir(parents=True, exist_ok=True)
+                with open(doc_path, 'w') as f:
+                    f.write(content)
+                return True
+            except Exception as e:
+                print(f"Error saving research document: {e}")
+                return False
     
     def append_to_research(self, connector_id: str, content: str) -> bool:
-        """Append content to a connector's research document.
-        
-        Args:
-            connector_id: ID of connector
-            content: Content to append
-            
-        Returns:
-            True if successful, False otherwise
-        """
-        doc_path = self.get_research_document_path(connector_id)
-        if not doc_path:
-            return False
-        
-        try:
-            with open(doc_path, 'a') as f:
-                f.write('\n\n' + content)
-            return True
-        except Exception as e:
-            print(f"Error appending to research: {e}")
-            return False
+        """Append content to a connector's research document."""
+        existing = self.get_research_document(connector_id) or ""
+        new_content = existing + '\n\n' + content
+        return self.save_research_document(connector_id, new_content)
 
 
 # Singleton instance
