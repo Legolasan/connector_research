@@ -59,6 +59,7 @@ class FivetranSchemaObject:
     cursor_field: str = ""  # Field used for incremental sync (e.g., updated_at)
     primary_key: str = ""  # Primary key field
     is_supported: bool = True  # Whether Fivetran supports this object
+    delete_method: str = ""  # How deletes are captured: Soft Delete, Deleted Endpoint, Webhook, Audit Log, None
     
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -69,7 +70,8 @@ class FivetranSchemaObject:
             'description': self.description[:500],
             'cursor_field': self.cursor_field,
             'primary_key': self.primary_key,
-            'is_supported': self.is_supported
+            'is_supported': self.is_supported,
+            'delete_method': self.delete_method
         }
 
 
@@ -471,6 +473,53 @@ class FivetranCrawler:
                     if 'general' not in context.permissions_required:
                         context.permissions_required['general'] = []
                     context.permissions_required['general'].append(perm)
+        
+        # Detect delete methods for objects
+        content_lower = content.lower()
+        
+        # Soft delete field patterns
+        SOFT_DELETE_FIELDS = ['is_deleted', 'deleted', 'deleted_at', 'is_active', 'active', 
+                              'status', 'archived', 'is_archived', 'removed', 'is_removed']
+        
+        # Check for global delete patterns
+        has_deleted_endpoint = bool(re.search(r'(?:get|fetch)\s*/[^\s]*deleted', content_lower) or
+                                    'deleted endpoint' in content_lower or
+                                    'deleted records' in content_lower)
+        has_webhook_deletes = bool(re.search(r'webhook[^\n]*delete', content_lower) or
+                                   re.search(r'delete[^\n]*webhook', content_lower) or
+                                   re.search(r'\.deleted|deleted\.', content_lower))
+        has_audit_log = bool('audit' in content_lower and ('log' in content_lower or 'trail' in content_lower))
+        has_soft_delete = any(field in content_lower for field in SOFT_DELETE_FIELDS)
+        
+        # Assign delete methods to objects
+        for obj in context.objects:
+            table_context = self._get_table_context(content, obj.name)
+            table_context_lower = table_context.lower()
+            
+            # Check for object-specific delete patterns
+            if any(field in table_context_lower for field in SOFT_DELETE_FIELDS):
+                # Find which field
+                for field in SOFT_DELETE_FIELDS:
+                    if field in table_context_lower:
+                        obj.delete_method = f"Soft Delete ({field})"
+                        break
+            elif re.search(rf'{obj.name}[^\n]*deleted\s*endpoint', table_context_lower):
+                obj.delete_method = "Deleted Endpoint"
+            elif re.search(rf'webhook[^\n]*{obj.name}[^\n]*delete|{obj.name}[^\n]*\.deleted', table_context_lower):
+                obj.delete_method = "Webhook"
+            elif 'audit' in table_context_lower:
+                obj.delete_method = "Audit Log"
+            # Fall back to global patterns
+            elif has_deleted_endpoint:
+                obj.delete_method = "Deleted Endpoint"
+            elif has_webhook_deletes:
+                obj.delete_method = "Webhook"
+            elif has_soft_delete:
+                obj.delete_method = "Soft Delete"
+            elif has_audit_log:
+                obj.delete_method = "Audit Log"
+            else:
+                obj.delete_method = "None"
         
         return context
     

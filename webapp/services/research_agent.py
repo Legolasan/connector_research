@@ -157,6 +157,7 @@ RESEARCH_SECTIONS = [
         "For each object, identify: Primary Key field, Cursor Field for incremental sync (e.g., updated_at, modified_date), Parent object if this is a child entity.",
         "For each object, specify the exact extraction method: REST endpoint (e.g., GET /v1/accounts), GraphQL query, SOAP operation, SDK method, or other mechanism.",
         "For each object, list required permissions/scopes needed to access that object.",
+        "For each object, identify the delete detection method: Soft Delete (specify field like is_deleted, deleted_at), Deleted Endpoint (specify URL like GET /deleted_records), Webhook (specify event like record.deleted), Audit Log, or None if hard deletes only.",
         "Indicate if each object is supported by Fivetran (if Fivetran context is available). Mark with checkmark or 'Yes'/'No'.",
         "Categorize objects into: Full Load Only (no reliable cursor), Incremental (has cursor field), CDC-capable (real-time change tracking).",
         "Provide a sample Python code example showing how to extract records from 2-3 key objects with pagination.",
@@ -486,7 +487,14 @@ class ResearchAgent:
                     sync_mode = obj.get('sync_mode', 'Unknown')
                     parent = obj.get('parent', '-')
                     cursor = obj.get('cursor_field', '-')
-                    parts.append(f"  - {obj_name}: sync_mode={sync_mode}, parent={parent}, cursor={cursor}")
+                    delete_method = obj.get('delete_method', 'Unknown')
+                    parts.append(f"  - {obj_name}: sync_mode={sync_mode}, parent={parent}, cursor={cursor}, delete_method={delete_method}")
+            
+            # Include capture_deletes feature from overview
+            if overview.get('supported_features'):
+                capture_deletes = overview['supported_features'].get('capture_deletes')
+                if capture_deletes is not None:
+                    parts.append(f"\n**Fivetran Capture Deletes Feature:** {'Supported' if capture_deletes else 'Not Supported'}")
             
             if schema.get('parent_child_relationships'):
                 parts.append(f"\n**Fivetran Parent-Child Relationships:**")
@@ -546,7 +554,7 @@ Your task is to create a comprehensive Object Catalog for connector research.
 
 CRITICAL OUTPUT FORMAT REQUIREMENTS:
 1. Start with a markdown table listing ALL available objects with these exact columns:
-   | Object | Extraction Method | Primary Key | Cursor Field | Parent | Permissions | Fivetran Support |
+   | Object | Extraction Method | Primary Key | Cursor Field | Parent | Permissions | Delete Method | Fivetran Support |
    
 2. The table should include:
    - Object: Name of the entity/object (e.g., accounts, contacts, orders)
@@ -555,10 +563,17 @@ CRITICAL OUTPUT FORMAT REQUIREMENTS:
    - Cursor Field: Field for incremental sync (e.g., updated_at, modified_date) or "-" if full load only
    - Parent: Parent object name if this is a child entity, or "-" if top-level
    - Permissions: Required scopes/permissions (e.g., read:accounts, accounts.read)
+   - Delete Method: How to detect deleted records. Use one of:
+     * "Soft Delete (field_name)" - e.g., "Soft Delete (is_deleted)", "Soft Delete (deleted_at)"
+     * "Deleted Endpoint" - API provides GET /deleted_records or similar
+     * "Webhook (event_name)" - e.g., "Webhook (record.deleted)"
+     * "Audit Log" - Deletions tracked in audit/activity endpoint
+     * "None" - Hard deletes only, no detection available
    - Fivetran Support: "✓" if supported by Fivetran, "✗" if not, or "?" if unknown
 
 3. After the table, include:
    - Replication Strategy Notes: List objects by category (Full Load Only, Incremental, CDC-capable)
+   - Delete Detection Summary: Group objects by delete method
    - Sample Extraction Code: Python code example for 2-3 key objects with pagination
    - Volume Considerations: Rate limits or pagination specific to high-volume objects
 
@@ -608,9 +623,9 @@ OUTPUT FORMAT REQUIRED:
 
 ### 19.1 Object Catalog Table
 
-| Object | Extraction Method | Primary Key | Cursor Field | Parent | Permissions | Fivetran Support |
-|--------|-------------------|-------------|--------------|--------|-------------|------------------|
-| (list all objects here) |
+| Object | Extraction Method | Primary Key | Cursor Field | Parent | Permissions | Delete Method | Fivetran Support |
+|--------|-------------------|-------------|--------------|--------|-------------|---------------|------------------|
+| (list all objects here - include Delete Method for each: Soft Delete (field), Deleted Endpoint, Webhook (event), Audit Log, or None) |
 
 ### 19.2 Replication Strategy Notes
 
@@ -618,13 +633,22 @@ OUTPUT FORMAT REQUIRED:
 **Incremental Objects:** (list objects with cursor fields)
 **CDC-Capable Objects:** (list objects with real-time change tracking if any)
 
-### 19.3 Sample Extraction Code
+### 19.3 Delete Detection Summary
+
+**Soft Delete:** (list objects with soft delete flag - specify field name)
+**Deleted Endpoint:** (list objects with dedicated deleted records endpoint)
+**Webhook:** (list objects with delete webhook events)
+**Audit Log:** (list objects tracked via audit log)
+**No Delete Detection:** (list objects with hard deletes only)
+
+### 19.4 Sample Extraction Code
 
 ```python
 # Python code example for extracting 2-3 key objects with pagination
+# Include example for detecting deleted records if applicable
 ```
 
-### 19.4 Volume Considerations
+### 19.5 Volume Considerations
 
 (Rate limits, pagination limits, high-volume object notes)
 """
