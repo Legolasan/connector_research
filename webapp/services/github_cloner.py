@@ -266,7 +266,20 @@ class GitHubCloner:
         
         raise ValueError(f"Could not parse GitHub URL: {url}")
     
-    def clone_repo(self, github_url: str, connector_id: str) -> Path:
+    def _check_git_available(self) -> bool:
+        """Check if git is available on the system."""
+        try:
+            subprocess.run(
+                ['git', '--version'],
+                check=True,
+                capture_output=True,
+                text=True
+            )
+            return True
+        except (subprocess.CalledProcessError, FileNotFoundError):
+            return False
+    
+    def clone_repo(self, github_url: str, connector_id: str) -> Optional[Path]:
         """Clone a GitHub repository.
         
         Args:
@@ -274,8 +287,14 @@ class GitHubCloner:
             connector_id: ID of the connector (for directory naming)
             
         Returns:
-            Path to the cloned repository
+            Path to the cloned repository, or None if git is not available
         """
+        # Check if git is available
+        if not self._check_git_available():
+            print("⚠ Git is not installed. Skipping repository clone.")
+            print("  Research will continue using web search only.")
+            return None
+        
         owner, repo_name = self._parse_github_url(github_url)
         
         # Create target directory
@@ -296,7 +315,8 @@ class GitHubCloner:
                 text=True
             )
         except subprocess.CalledProcessError as e:
-            raise RuntimeError(f"Failed to clone repository: {e.stderr}")
+            print(f"⚠ Failed to clone repository: {e.stderr}")
+            return None
         
         return target_dir
     
@@ -890,7 +910,7 @@ class GitHubCloner:
         self, 
         github_url: str, 
         connector_id: str
-    ) -> ExtractedCode:
+    ) -> Optional[ExtractedCode]:
         """Clone a repository and extract all patterns.
         
         Automatically detects if the repository follows the structured format:
@@ -903,10 +923,14 @@ class GitHubCloner:
             connector_id: ID of the connector
             
         Returns:
-            ExtractedCode object with all extracted information
+            ExtractedCode object with all extracted information, or None if git unavailable
         """
         # Clone the repository
         repo_path = self.clone_repo(github_url, connector_id)
+        
+        # If git is not available, return None
+        if repo_path is None:
+            return None
         
         # Extract patterns with structure detection
         result = self.extract_structured_patterns(repo_path)

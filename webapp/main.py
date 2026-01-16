@@ -382,7 +382,10 @@ async def generate_research(connector_id: str, background_tasks: BackgroundTasks
             if connector.github_url and github_cloner:
                 connector_manager.update_connector(connector_id, status=ConnectorStatus.CLONING.value)
                 extracted = await github_cloner.clone_and_extract(connector.github_url, connector_id)
-                github_context = extracted.to_dict()
+                if extracted:
+                    github_context = extracted.to_dict()
+                else:
+                    print(f"⚠ GitHub cloning skipped for {connector.name}, continuing with web search only")
             
             # Crawl Fivetran documentation if URLs provided
             if connector.fivetran_urls and connector.fivetran_urls.has_urls() and fivetran_crawler:
