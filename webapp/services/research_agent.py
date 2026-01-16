@@ -2094,7 +2094,7 @@ CRITICAL OUTPUT FORMAT REQUIREMENTS:
 6. List at least 15-30 objects if available, or all objects if fewer exist
 """
         else:
-        system_prompt = """You are an expert technical writer specializing in data integration and ETL connector development.
+            system_prompt = """You are an expert technical writer specializing in data integration and ETL connector development.
 Your task is to write detailed, production-grade documentation for connector research.
 
 Requirements:
@@ -2116,7 +2116,7 @@ Requirements:
 
         # Special user prompt for Section 19 (Object Catalog)
         if section.number == 19:
-        user_prompt = f"""Generate Section {section.number}: {section.name} for the {connector_name} connector research document.
+            user_prompt = f"""Generate Section {section.number}: {section.name} for the {connector_name} connector research document.
 
 Connector Type: {connector_type}
 Phase: {section.phase_name}
