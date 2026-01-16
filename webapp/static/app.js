@@ -51,10 +51,60 @@ function dashboard() {
         bulkUploadProgress: null,  // Progress tracking for bulk uploads
         bulkUploadJobId: null,
         vaultUploadStatus: null,  // Status messages for single uploads
+        
+        // Confirmation Modal State
+        showConfirmModal: false,
+        confirmModal: {
+            title: '',
+            message: '',
+            confirmText: 'Confirm',
+            cancelText: 'Cancel',
+            onConfirm: null,
+            type: 'info'  // 'info', 'warning', 'danger'
+        },
+        
+        // App-wide Status Messages
+        appStatus: null,  // { type: 'success'|'error'|'info', title: '', message: '' }
 
         // Initialize
         async init() {
             await this.loadConnectors();
+        },
+        
+        // =====================
+        // Utility Methods
+        // =====================
+        
+        showConfirm(title, message, confirmText = 'Confirm', cancelText = 'Cancel', type = 'info') {
+            return new Promise((resolve) => {
+                this.confirmModal = {
+                    title,
+                    message,
+                    confirmText,
+                    cancelText,
+                    type,
+                    onConfirm: (confirmed) => {
+                        this.showConfirmModal = false;
+                        resolve(confirmed);
+                    }
+                };
+                this.showConfirmModal = true;
+            });
+        },
+        
+        showStatus(type, title, message, autoClear = false) {
+            this.appStatus = { type, title, message };
+            if (autoClear) {
+                setTimeout(() => {
+                    if (this.appStatus?.type === type) {
+                        this.appStatus = null;
+                    }
+                }, 5000);
+            }
+        },
+        
+        clearStatus() {
+            this.appStatus = null;
         },
 
         // =====================
@@ -144,16 +194,26 @@ function dashboard() {
                     this.resetNewConnector();
                     
                     // Optionally auto-start research
-                    if (confirm('Connector created! Start research generation now?')) {
+                    const startResearch = await this.showConfirm(
+                        'Connector Created!',
+                        'Connector created successfully. Would you like to start research generation now?',
+                        'Start Research',
+                        'Later',
+                        'info'
+                    );
+                    
+                    if (startResearch) {
                         this.startResearch(connector.id);
+                    } else {
+                        this.showStatus('success', 'Connector Created', `"${connector.name}" has been created. You can start research anytime.`, true);
                     }
                 } else {
                     const error = await response.json();
-                    alert('Failed to create connector: ' + (error.detail || 'Unknown error'));
+                    this.showStatus('error', 'Creation Failed', error.detail || 'Failed to create connector');
                 }
             } catch (error) {
                 console.error('Create connector error:', error);
-                alert('Failed to create connector: ' + error.message);
+                this.showStatus('error', 'Creation Error', 'Failed to create connector: ' + error.message);
             } finally {
                 this.isCreatingConnector = false;
             }
@@ -167,7 +227,7 @@ function dashboard() {
                 
                 const extension = file.name.toLowerCase().slice(file.name.lastIndexOf('.'));
                 if (!allowedExtensions.includes(extension)) {
-                    alert('Please upload a CSV or PDF file.');
+                    this.showStatus('error', 'Invalid File Type', 'Please upload a CSV or PDF file.');
                     event.target.value = '';
                     return;
                 }
@@ -210,17 +270,18 @@ function dashboard() {
                     const connector = this.connectors.find(c => c.id === connectorId);
                     if (connector) {
                         connector.status = 'researching';
+                        this.showStatus('success', 'Research Started', `Research generation has started for "${connector.name}". Progress will be shown below.`, true);
                     }
                     
                     // Start polling for progress
                     this.pollResearchProgress(connectorId);
                 } else {
                     const error = await response.json();
-                    alert('Failed to start research: ' + (error.detail || 'Unknown error'));
+                    this.showStatus('error', 'Research Failed', error.detail || 'Failed to start research');
                 }
             } catch (error) {
                 console.error('Start research error:', error);
-                alert('Failed to start research: ' + error.message);
+                this.showStatus('error', 'Research Error', 'Failed to start research: ' + error.message);
             }
         },
         
@@ -256,7 +317,15 @@ function dashboard() {
         },
         
         async cancelResearch(connectorId) {
-            if (!confirm('Are you sure you want to cancel this research?')) return;
+            const confirmed = await this.showConfirm(
+                'Cancel Research',
+                'Are you sure you want to cancel this research? This action cannot be undone.',
+                'Cancel Research',
+                'Keep Running',
+                'warning'
+            );
+            
+            if (!confirmed) return;
             
             try {
                 const response = await fetch(`/api/connectors/${connectorId}/cancel`, {
@@ -267,6 +336,7 @@ function dashboard() {
                     const connector = this.connectors.find(c => c.id === connectorId);
                     if (connector) {
                         connector.status = 'cancelled';
+                        this.showStatus('info', 'Research Cancelled', `Research for "${connector.name}" has been cancelled.`, true);
                     }
                 }
             } catch (error) {
@@ -275,7 +345,18 @@ function dashboard() {
         },
         
         async deleteConnector(connectorId) {
-            if (!confirm('Are you sure you want to delete this connector? This cannot be undone.')) return;
+            const connector = this.connectors.find(c => c.id === connectorId);
+            const connectorName = connector?.name || 'this connector';
+            
+            const confirmed = await this.showConfirm(
+                'Delete Connector',
+                `Are you sure you want to delete "${connectorName}"? This action cannot be undone.`,
+                'Delete',
+                'Cancel',
+                'danger'
+            );
+            
+            if (!confirmed) return;
             
             try {
                 const response = await fetch(`/api/connectors/${connectorId}`, {
@@ -284,13 +365,14 @@ function dashboard() {
                 
                 if (response.ok) {
                     this.connectors = this.connectors.filter(c => c.id !== connectorId);
+                    this.showStatus('success', 'Connector Deleted', 'The connector has been successfully deleted.', true);
                 } else {
                     const error = await response.json();
-                    alert('Failed to delete connector: ' + (error.detail || 'Unknown error'));
+                    this.showStatus('error', 'Delete Failed', error.detail || 'Failed to delete connector');
                 }
             } catch (error) {
                 console.error('Delete connector error:', error);
-                alert('Failed to delete connector: ' + error.message);
+                this.showStatus('error', 'Delete Error', 'Failed to delete connector: ' + error.message);
             }
         },
         
@@ -342,14 +424,17 @@ function dashboard() {
                 if (response.ok) {
                     const data = await response.json();
                     this.searchResults = data.results;
+                    if (data.results.length === 0) {
+                        this.showStatus('info', 'No Results', 'No results found for your search query.', true);
+                    }
                 } else {
                     const error = await response.json();
                     console.error('Search failed:', error);
-                    alert('Search failed: ' + (error.detail || 'Unknown error'));
+                    this.showStatus('error', 'Search Failed', error.detail || 'Search request failed');
                 }
             } catch (error) {
                 console.error('Search error:', error);
-                alert('Search failed: ' + error.message);
+                this.showStatus('error', 'Search Error', 'Search failed: ' + error.message);
             } finally {
                 this.isSearching = false;
             }
@@ -759,27 +844,28 @@ function dashboard() {
                 if (response.ok) {
                     const results = await response.json();
                     if (results.length > 0) {
-                        let resultText = `Found ${results.length} results:\n\n`;
-                        results.forEach((r, i) => {
-                            resultText += `${i+1}. [${r.source_type}] ${r.title}\n`;
-                            resultText += `   Score: ${(r.score * 100).toFixed(1)}%\n`;
-                            resultText += `   ${r.text.substring(0, 200)}...\n\n`;
-                        });
-                        alert(resultText);
+                        this.showStatus('success', 'Search Results', `Found ${results.length} results in the Knowledge Vault.`, true);
+                        // Results are displayed in the UI, no need for alert
                     } else {
-                        alert('No results found.');
+                        this.showStatus('info', 'No Results', 'No results found in the Knowledge Vault for your query.', true);
                     }
                 }
             } catch (error) {
                 console.error('Search error:', error);
-                alert('Search failed: ' + error.message);
+                this.showStatus('error', 'Search Failed', 'Search failed: ' + error.message);
             }
         },
         
         async deleteVaultKnowledge(connectorName) {
-            if (!confirm(`Delete all knowledge for ${connectorName}? This cannot be undone.`)) {
-                return;
-            }
+            const confirmed = await this.showConfirm(
+                'Delete Knowledge',
+                `Are you sure you want to delete all knowledge for "${connectorName}"? This action cannot be undone.`,
+                'Delete',
+                'Cancel',
+                'danger'
+            );
+            
+            if (!confirmed) return;
             
             try {
                 const response = await fetch(`/api/vault/${encodeURIComponent(connectorName)}`, {
@@ -787,14 +873,14 @@ function dashboard() {
                 });
                 
                 if (response.ok) {
-                    alert(`Knowledge for ${connectorName} deleted.`);
+                    this.showStatus('success', 'Knowledge Deleted', `All knowledge for "${connectorName}" has been deleted.`, true);
                     await this.loadVaultStats();
                 } else {
-                    alert('Failed to delete knowledge.');
+                    this.showStatus('error', 'Delete Failed', 'Failed to delete knowledge from the vault.');
                 }
             } catch (error) {
                 console.error('Delete error:', error);
-                alert('Error: ' + error.message);
+                this.showStatus('error', 'Delete Error', 'Error: ' + error.message);
             }
         }
     };
