@@ -33,6 +33,20 @@ function dashboard() {
             manual_file: null,
             manual_text: ''
         },
+        
+        // 📚 Knowledge Vault State
+        showVaultUploadModal: false,
+        isUploadingVault: false,
+        vaultStats: { connectors: [], connector_count: 0, total_chunks: 0 },
+        vaultUploadType: 'text',  // 'text', 'url', or 'file'
+        vaultUpload: {
+            connector_name: '',
+            title: '',
+            source_type: 'official_docs',
+            content: '',
+            url: '',
+            file: null
+        },
 
         // Initialize
         async init() {
@@ -423,6 +437,179 @@ function dashboard() {
                 return text.replace(/\n/g, '<br>');
             } catch (e) {
                 return text.replace(/\n/g, '<br>');
+            }
+        },
+
+        // =====================
+        // 📚 Knowledge Vault Methods
+        // =====================
+        
+        async loadVaultStats() {
+            try {
+                const response = await fetch('/api/vault/stats');
+                if (response.ok) {
+                    this.vaultStats = await response.json();
+                }
+            } catch (error) {
+                console.error('Error loading vault stats:', error);
+            }
+        },
+        
+        async submitVaultUpload() {
+            if (!this.vaultUpload.connector_name || !this.vaultUpload.title) return;
+            
+            this.isUploadingVault = true;
+            
+            try {
+                let response;
+                
+                if (this.vaultUploadType === 'text') {
+                    // Text upload
+                    if (!this.vaultUpload.content) {
+                        alert('Please enter documentation content');
+                        return;
+                    }
+                    
+                    response = await fetch('/api/vault/index', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            connector_name: this.vaultUpload.connector_name,
+                            title: this.vaultUpload.title,
+                            content: this.vaultUpload.content,
+                            source_type: this.vaultUpload.source_type
+                        })
+                    });
+                    
+                } else if (this.vaultUploadType === 'url') {
+                    // URL fetch
+                    if (!this.vaultUpload.url) {
+                        alert('Please enter a documentation URL');
+                        return;
+                    }
+                    
+                    response = await fetch('/api/vault/index-url', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            connector_name: this.vaultUpload.connector_name,
+                            url: this.vaultUpload.url,
+                            source_type: this.vaultUpload.source_type
+                        })
+                    });
+                    
+                } else if (this.vaultUploadType === 'file') {
+                    // File upload
+                    if (!this.vaultUpload.file) {
+                        alert('Please select a file');
+                        return;
+                    }
+                    
+                    const formData = new FormData();
+                    formData.append('connector_name', this.vaultUpload.connector_name);
+                    formData.append('title', this.vaultUpload.title);
+                    formData.append('source_type', this.vaultUpload.source_type);
+                    formData.append('file', this.vaultUpload.file);
+                    
+                    response = await fetch('/api/vault/index-file', {
+                        method: 'POST',
+                        body: formData
+                    });
+                }
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    alert(`Successfully indexed ${data.chunk_count} chunks for ${data.connector_name}!`);
+                    
+                    // Reset form
+                    this.vaultUpload = {
+                        connector_name: '',
+                        title: '',
+                        source_type: 'official_docs',
+                        content: '',
+                        url: '',
+                        file: null
+                    };
+                    this.showVaultUploadModal = false;
+                    
+                    // Reload stats
+                    await this.loadVaultStats();
+                } else {
+                    const error = await response.json();
+                    alert('Error: ' + (error.detail || 'Failed to index documentation'));
+                }
+            } catch (error) {
+                console.error('Vault upload error:', error);
+                alert('Error: ' + error.message);
+            } finally {
+                this.isUploadingVault = false;
+            }
+        },
+        
+        handleVaultFileUpload(event) {
+            const file = event.target.files[0];
+            if (file) {
+                this.vaultUpload.file = file;
+                if (!this.vaultUpload.title) {
+                    this.vaultUpload.title = file.name;
+                }
+            }
+        },
+        
+        async searchVault(connectorName) {
+            const query = prompt(`Search ${connectorName} knowledge vault:`, '');
+            if (!query) return;
+            
+            try {
+                const response = await fetch('/api/vault/search', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        connector_name: connectorName,
+                        query: query,
+                        top_k: 5
+                    })
+                });
+                
+                if (response.ok) {
+                    const results = await response.json();
+                    if (results.length > 0) {
+                        let resultText = `Found ${results.length} results:\n\n`;
+                        results.forEach((r, i) => {
+                            resultText += `${i+1}. [${r.source_type}] ${r.title}\n`;
+                            resultText += `   Score: ${(r.score * 100).toFixed(1)}%\n`;
+                            resultText += `   ${r.text.substring(0, 200)}...\n\n`;
+                        });
+                        alert(resultText);
+                    } else {
+                        alert('No results found.');
+                    }
+                }
+            } catch (error) {
+                console.error('Search error:', error);
+                alert('Search failed: ' + error.message);
+            }
+        },
+        
+        async deleteVaultKnowledge(connectorName) {
+            if (!confirm(`Delete all knowledge for ${connectorName}? This cannot be undone.`)) {
+                return;
+            }
+            
+            try {
+                const response = await fetch(`/api/vault/${encodeURIComponent(connectorName)}`, {
+                    method: 'DELETE'
+                });
+                
+                if (response.ok) {
+                    alert(`Knowledge for ${connectorName} deleted.`);
+                    await this.loadVaultStats();
+                } else {
+                    alert('Failed to delete knowledge.');
+                }
+            } catch (error) {
+                console.error('Delete error:', error);
+                alert('Error: ' + error.message);
             }
         }
     };

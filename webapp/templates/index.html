@@ -46,6 +46,15 @@
                 </svg>
                 <span class="font-medium">Chat</span>
             </button>
+            
+            <button @click="activeTab = 'vault'; loadVaultStats()" 
+                    :class="activeTab === 'vault' ? 'bg-amber-600/20 text-amber-400 border-amber-500/30' : 'text-gray-400 hover:bg-white/5 border-transparent'"
+                    class="w-full flex items-center gap-3 px-4 py-3 rounded-xl border transition-all duration-200">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"></path>
+                </svg>
+                <span class="font-medium">📚 Knowledge Vault</span>
+            </button>
         </nav>
         
         <!-- Connector Filter -->
@@ -353,7 +362,215 @@
                 </form>
             </div>
         </div>
+        
+        <!-- 📚 Knowledge Vault Panel -->
+        <div x-show="activeTab === 'vault'" x-cloak class="flex-1 flex flex-col">
+            <!-- Header -->
+            <div class="p-6 border-b border-white/5 flex items-center justify-between">
+                <div>
+                    <h2 class="text-xl font-semibold text-white">📚 Knowledge Vault</h2>
+                    <p class="text-sm text-gray-400 mt-1">Pre-index official documentation for maximum research accuracy</p>
+                </div>
+                <button @click="showVaultUploadModal = true" 
+                        class="px-4 py-2 bg-amber-600 hover:bg-amber-500 rounded-xl font-medium transition-colors flex items-center gap-2">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path>
+                    </svg>
+                    Add Documentation
+                </button>
+            </div>
+            
+            <!-- Vault Stats -->
+            <div class="p-6 border-b border-white/5 bg-amber-500/5">
+                <div class="grid grid-cols-3 gap-6">
+                    <div class="text-center">
+                        <div class="text-3xl font-bold text-amber-400" x-text="vaultStats.connector_count || 0"></div>
+                        <div class="text-xs text-gray-500 mt-1">Connectors</div>
+                    </div>
+                    <div class="text-center">
+                        <div class="text-3xl font-bold text-amber-400" x-text="vaultStats.total_chunks || 0"></div>
+                        <div class="text-xs text-gray-500 mt-1">Indexed Chunks</div>
+                    </div>
+                    <div class="text-center">
+                        <div class="text-3xl font-bold text-green-400">+60</div>
+                        <div class="text-xs text-gray-500 mt-1">Confidence Boost</div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Connector Knowledge List -->
+            <div class="flex-1 overflow-auto p-6">
+                <div class="max-w-4xl mx-auto space-y-4">
+                    <template x-if="!vaultStats.connectors || vaultStats.connectors.length === 0">
+                        <div class="text-center py-12">
+                            <div class="w-20 h-20 rounded-full bg-gradient-to-br from-amber-500/20 to-orange-500/20 mx-auto mb-6 flex items-center justify-center">
+                                <span class="text-4xl">📚</span>
+                            </div>
+                            <h3 class="text-lg font-semibold text-white mb-2">No Documentation Indexed Yet</h3>
+                            <p class="text-gray-400 mb-6 max-w-md mx-auto">Pre-index official API documentation to give your research the highest confidence boost.</p>
+                            <button @click="showVaultUploadModal = true" class="px-6 py-3 bg-amber-600 hover:bg-amber-500 rounded-xl font-medium transition-colors">
+                                Add Your First Documentation
+                            </button>
+                        </div>
+                    </template>
+                    
+                    <template x-for="connector in vaultStats.connectors || []" :key="connector.id">
+                        <div class="bg-black/40 border border-white/10 rounded-2xl p-6">
+                            <div class="flex items-center justify-between">
+                                <div class="flex items-center gap-4">
+                                    <div class="w-12 h-12 rounded-xl bg-gradient-to-br from-amber-500/20 to-orange-500/20 flex items-center justify-center">
+                                        <span class="text-xl">📚</span>
+                                    </div>
+                                    <div>
+                                        <h3 class="text-lg font-semibold text-white" x-text="connector.name"></h3>
+                                        <p class="text-sm text-gray-400" x-text="connector.chunks + ' chunks indexed'"></p>
+                                    </div>
+                                </div>
+                                <div class="flex items-center gap-3">
+                                    <button @click="searchVault(connector.name)" 
+                                            class="px-4 py-2 bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-400 rounded-xl transition-colors flex items-center gap-2">
+                                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+                                        </svg>
+                                        Search
+                                    </button>
+                                    <button @click="deleteVaultKnowledge(connector.name)" 
+                                            class="px-4 py-2 bg-red-500/20 hover:bg-red-500/30 text-red-400 rounded-xl transition-colors flex items-center gap-2">
+                                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
+                                        </svg>
+                                        Delete
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </template>
+                </div>
+            </div>
+        </div>
     </main>
+    
+    <!-- 📚 Vault Upload Modal -->
+    <div x-show="showVaultUploadModal" x-cloak 
+         class="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50"
+         @click.self="showVaultUploadModal = false">
+        <div class="bg-gray-900 border border-white/10 rounded-3xl p-8 max-w-xl w-full mx-4 shadow-2xl max-h-[90vh] overflow-auto">
+            <div class="flex items-center justify-between mb-6">
+                <h2 class="text-2xl font-bold text-white">📚 Add to Knowledge Vault</h2>
+                <button @click="showVaultUploadModal = false" class="w-10 h-10 rounded-xl bg-white/5 hover:bg-white/10 flex items-center justify-center transition-colors">
+                    <svg class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                    </svg>
+                </button>
+            </div>
+            
+            <!-- Tabs -->
+            <div class="flex gap-2 mb-6">
+                <button @click="vaultUploadType = 'text'" 
+                        :class="vaultUploadType === 'text' ? 'bg-amber-500/20 text-amber-400 border-amber-500/30' : 'bg-black/40 text-gray-400 border-white/10'"
+                        class="flex-1 py-3 rounded-xl border font-medium transition-colors">
+                    Paste Text
+                </button>
+                <button @click="vaultUploadType = 'url'" 
+                        :class="vaultUploadType === 'url' ? 'bg-amber-500/20 text-amber-400 border-amber-500/30' : 'bg-black/40 text-gray-400 border-white/10'"
+                        class="flex-1 py-3 rounded-xl border font-medium transition-colors">
+                    From URL
+                </button>
+                <button @click="vaultUploadType = 'file'" 
+                        :class="vaultUploadType === 'file' ? 'bg-amber-500/20 text-amber-400 border-amber-500/30' : 'bg-black/40 text-gray-400 border-white/10'"
+                        class="flex-1 py-3 rounded-xl border font-medium transition-colors">
+                    Upload File
+                </button>
+            </div>
+            
+            <form @submit.prevent="submitVaultUpload()">
+                <!-- Common Fields -->
+                <div class="space-y-4 mb-6">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-300 mb-2">Connector Name *</label>
+                        <input type="text" x-model="vaultUpload.connector_name" placeholder="e.g., Shopify, Facebook, NetSuite" 
+                               class="w-full px-4 py-3 bg-black/40 border border-white/10 rounded-xl focus:border-amber-500 focus:ring-1 focus:ring-amber-500 outline-none transition-all text-white placeholder-gray-500">
+                    </div>
+                    
+                    <div>
+                        <label class="block text-sm font-medium text-gray-300 mb-2">Document Title *</label>
+                        <input type="text" x-model="vaultUpload.title" placeholder="e.g., REST API Reference, GraphQL Schema" 
+                               class="w-full px-4 py-3 bg-black/40 border border-white/10 rounded-xl focus:border-amber-500 focus:ring-1 focus:ring-amber-500 outline-none transition-all text-white placeholder-gray-500">
+                    </div>
+                    
+                    <div>
+                        <label class="block text-sm font-medium text-gray-300 mb-2">Source Type</label>
+                        <select x-model="vaultUpload.source_type" 
+                                class="w-full px-4 py-3 bg-black/40 border border-white/10 rounded-xl focus:border-amber-500 focus:ring-1 focus:ring-amber-500 outline-none transition-all text-white">
+                            <option value="official_docs">Official API Documentation</option>
+                            <option value="sdk_reference">SDK/Library Reference</option>
+                            <option value="erd_schema">ERD/Schema Documentation</option>
+                            <option value="changelog">Changelog/Release Notes</option>
+                            <option value="fivetran_docs">Fivetran Connector Docs</option>
+                            <option value="airbyte_docs">Airbyte Connector Docs</option>
+                            <option value="custom">Custom/Other</option>
+                        </select>
+                    </div>
+                </div>
+                
+                <!-- Text Input -->
+                <div x-show="vaultUploadType === 'text'" class="mb-6">
+                    <label class="block text-sm font-medium text-gray-300 mb-2">Documentation Content *</label>
+                    <textarea x-model="vaultUpload.content" 
+                              placeholder="Paste the documentation content here (markdown supported)..."
+                              rows="10"
+                              class="w-full px-4 py-3 bg-black/40 border border-white/10 rounded-xl focus:border-amber-500 focus:ring-1 focus:ring-amber-500 outline-none transition-all text-white placeholder-gray-500 resize-none font-mono text-sm"></textarea>
+                </div>
+                
+                <!-- URL Input -->
+                <div x-show="vaultUploadType === 'url'" class="mb-6">
+                    <label class="block text-sm font-medium text-gray-300 mb-2">Documentation URL *</label>
+                    <input type="url" x-model="vaultUpload.url" placeholder="https://docs.example.com/api-reference" 
+                           class="w-full px-4 py-3 bg-black/40 border border-white/10 rounded-xl focus:border-amber-500 focus:ring-1 focus:ring-amber-500 outline-none transition-all text-white placeholder-gray-500">
+                    <p class="text-xs text-gray-500 mt-2">The system will fetch and index the page content.</p>
+                </div>
+                
+                <!-- File Upload -->
+                <div x-show="vaultUploadType === 'file'" class="mb-6">
+                    <label class="block text-sm font-medium text-gray-300 mb-2">Upload File *</label>
+                    <label class="flex items-center justify-center px-4 py-8 bg-black/40 border border-dashed border-white/20 hover:border-amber-500/50 rounded-xl cursor-pointer transition-colors group">
+                        <input type="file" 
+                               accept=".md,.txt,.json,.html"
+                               @change="handleVaultFileUpload($event)"
+                               class="hidden">
+                        <div class="text-center">
+                            <svg class="w-10 h-10 text-gray-500 group-hover:text-amber-400 mx-auto mb-2 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 13h6m-3-3v6m5 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+                            </svg>
+                            <span x-show="!vaultUpload.file" class="text-sm text-gray-500 group-hover:text-gray-300 transition-colors">Click to upload .md, .txt, .json, or .html</span>
+                            <span x-show="vaultUpload.file" class="text-sm text-amber-400" x-text="vaultUpload.file?.name"></span>
+                        </div>
+                    </label>
+                </div>
+                
+                <!-- Info Box -->
+                <div class="bg-amber-500/10 border border-amber-500/20 rounded-xl p-4 mb-6">
+                    <div class="flex items-start gap-3">
+                        <span class="text-xl">💡</span>
+                        <div>
+                            <p class="text-sm text-amber-300 font-medium">Research Priority</p>
+                            <p class="text-xs text-gray-400 mt-1">Documents in the Knowledge Vault are given the highest confidence score (+60 points) when generating research. Pre-index official API docs for best results!</p>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="flex items-center justify-end gap-3 pt-4 border-t border-white/10">
+                    <button type="button" @click="showVaultUploadModal = false" class="px-6 py-3 text-gray-400 hover:text-white transition-colors">Cancel</button>
+                    <button type="submit" 
+                            :disabled="!vaultUpload.connector_name || !vaultUpload.title || isUploadingVault"
+                            class="px-6 py-3 bg-amber-600 hover:bg-amber-500 disabled:opacity-50 disabled:cursor-not-allowed rounded-xl font-medium transition-colors flex items-center gap-2">
+                        <span x-show="isUploadingVault" class="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
+                        <span x-text="isUploadingVault ? 'Indexing...' : 'Index Documentation'"></span>
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
     
     <!-- New Connector Modal -->
     <div x-show="showNewConnectorModal" x-cloak 

@@ -931,11 +931,14 @@ class ResearchMetrics:
 class ResearchAgent:
     """Agent that auto-generates connector research documents.
     
-    Now enhanced with DocWhisperer™ for official documentation access! 🔮
+    Now enhanced with:
+    - 📚 Knowledge Vault - Pre-indexed official documentation (HIGHEST confidence!)
+    - 🔮 DocWhisperer™ - Context7 MCP for official documentation access
+    - 🔍 Tavily Web Search - Fallback for additional context
     """
     
     def __init__(self):
-        """Initialize the research agent with DocWhisperer integration."""
+        """Initialize the research agent with Knowledge Vault and DocWhisperer integration."""
         self.openai_api_key = os.getenv("OPENAI_API_KEY")
         self.tavily_api_key = os.getenv("TAVILY_API_KEY")
         self.model = os.getenv("RESEARCH_MODEL", "gpt-4o")
@@ -947,9 +950,19 @@ class ResearchAgent:
         self._cancel_requested = False
         self._current_progress: Optional[ResearchProgress] = None
         
+        # 📚 Initialize Knowledge Vault (pre-indexed official docs)
+        self.knowledge_vault = None
+        try:
+            from services.knowledge_vault import get_knowledge_vault
+            self.knowledge_vault = get_knowledge_vault()
+            print("  📚 Knowledge Vault connected!")
+        except Exception as e:
+            print(f"  ⚠ Knowledge Vault not available: {e}")
+        
         # 🔮 Summon the DocWhisperer
         self.doc_whisperer = get_doc_whisperer()
-        print("  📚 ResearchAgent initialized with DocWhisperer™ support!")
+        print("  🔮 DocWhisperer™ initialized!")
+        print("  📚 ResearchAgent ready with multi-source knowledge!")
     
     def get_progress(self) -> Optional[ResearchProgress]:
         """Get current research progress."""
@@ -1259,21 +1272,34 @@ class ResearchAgent:
         """
         summary_parts = []
         
-        # Header with DocWhisperer status
+        # Header with Knowledge Vault and DocWhisperer status
         docwhisperer_stats = self.doc_whisperer.get_whisper_stats()
         docwhisperer_status = "🔮 Active" if docwhisperer_stats['status'] == 'enlightened' else "🔮 Ready"
+        
+        # Get Knowledge Vault stats for the connector
+        vault_status = "Not available"
+        vault_chunks = 0
+        if self.knowledge_vault:
+            # Extract connector name from the context
+            connector_for_vault = connector_name if connector_name else "Unknown"
+            vault_stats = self.knowledge_vault.get_stats(connector_for_vault)
+            vault_chunks = vault_stats.get('chunks', 0)
+            vault_status = f"📚 {vault_chunks} chunks indexed" if vault_chunks > 0 else "📚 No pre-indexed docs"
         
         summary_parts.append(f"""
 # 📋 Quick Summary Dashboard
 
 > At-a-glance metrics and comparison for rapid assessment
 
-| Research Source | Status |
-|-----------------|--------|
-| 🔮 **DocWhisperer™** | {docwhisperer_status} ({docwhisperer_stats['total_whispers']} whispers, {docwhisperer_stats['known_libraries']} libraries known) |
-| 🔍 **Web Search** | Tavily API |
-| 📁 **GitHub Analysis** | {'✓ Provided' if github_context else 'Not provided'} |
-| 📊 **Fivetran Parity** | {'✓ Provided' if fivetran_context else 'Not provided'} |
+| Research Source | Status | Confidence |
+|-----------------|--------|------------|
+| 📚 **Knowledge Vault** | {vault_status} | +60 pts (HIGHEST) |
+| 🔮 **DocWhisperer™** | {docwhisperer_status} ({docwhisperer_stats['total_whispers']} whispers) | +50 pts |
+| 🔍 **Web Search** | Tavily API | +40 pts (official) |
+| 📁 **GitHub Analysis** | {'✓ Provided' if github_context else 'Not provided'} | +25 pts |
+| 📊 **Fivetran Parity** | {'✓ Provided' if fivetran_context else 'Not provided'} | +15 pts |
+
+{'> 💡 **Tip:** Pre-index official documentation in the Knowledge Vault for maximum research accuracy!' if vault_chunks == 0 else '> ✅ **Knowledge Vault active** - Research will prioritize pre-indexed official documentation!'}
 
 ---
 """)
@@ -1521,7 +1547,8 @@ class ResearchAgent:
             Dict with confidence score and source details
         """
         sources_found = {
-            'DOCWHISPERER': [],  # 🔮 The Oracle speaks first!
+            'KNOWLEDGE_VAULT': [],  # 📚 Pre-indexed official docs (HIGHEST!)
+            'DOCWHISPERER': [],  # 🔮 The Oracle speaks!
             'OFFICIAL': [],
             'GITHUB': [],
             'GITHUB-ISSUES': [],
@@ -1532,7 +1559,21 @@ class ResearchAgent:
             'OTHER': []
         }
         
-        # 🔮 STEP 1: Consult the DocWhisperer first!
+        # 📚 STEP 0: Query Knowledge Vault FIRST (highest confidence!)
+        if self.knowledge_vault and self.knowledge_vault.has_knowledge(connector_name):
+            vault_results = self.knowledge_vault.search(
+                connector_name=connector_name,
+                query=claim,
+                top_k=2
+            )
+            if vault_results:
+                for result in vault_results:
+                    sources_found['KNOWLEDGE_VAULT'].append(
+                        f"[📚 Vault:{result.source_type}] {result.text[:200]}..."
+                    )
+                print(f"  📚 Knowledge Vault confirmed '{claim}' from pre-indexed docs!")
+        
+        # 🔮 STEP 1: Consult the DocWhisperer
         docwhisperer_topic_map = {
             'auth': f"authentication {claim}",
             'rate_limit': f"rate limits throttling {claim}",
@@ -1594,14 +1635,19 @@ class ResearchAgent:
         confidence_score = 0
         confidence_reasons = []
         
-        # 🔮 DocWhisperer provides the HIGHEST confidence!
+        # 📚 Knowledge Vault provides THE HIGHEST confidence!
+        if sources_found['KNOWLEDGE_VAULT']:
+            confidence_score += 60  # Pre-indexed official docs = max trust!
+            confidence_reasons.append("📚 Knowledge Vault confirmed from pre-indexed official docs")
+        
+        # 🔮 DocWhisperer provides high confidence!
         if sources_found['DOCWHISPERER']:
             confidence_score += 50  # The Oracle speaks truth!
             confidence_reasons.append("🔮 DocWhisperer confirmed from official source")
         
         if sources_found['OFFICIAL']:
             confidence_score += 40
-            confidence_reasons.append("Found in official docs")
+            confidence_reasons.append("Found in official docs (web)")
         
         if sources_found['GITHUB'] or sources_found['GITHUB-ISSUES']:
             confidence_score += 25
@@ -1619,12 +1665,12 @@ class ResearchAgent:
             confidence_score += 5
             confidence_reasons.append("Found in changelog")
         
-        # Determine confidence level
-        if confidence_score >= 80:
+        # Determine confidence level (adjusted for new max of 210)
+        if confidence_score >= 100:
             confidence_level = "VERIFIED"
-        elif confidence_score >= 50:
+        elif confidence_score >= 60:
             confidence_level = "DOCUMENTED"
-        elif confidence_score >= 25:
+        elif confidence_score >= 30:
             confidence_level = "COMMUNITY"
         elif confidence_score > 0:
             confidence_level = "INFERRED"
@@ -1944,7 +1990,42 @@ class ResearchAgent:
         Returns:
             Generated markdown content
         """
-        # 🔮 STEP 1: Consult the DocWhisperer first!
+        # =================================================================
+        # Multi-Source Knowledge Retrieval (Priority Order)
+        # 📚 Knowledge Vault (pre-indexed) > 🔮 DocWhisperer > 🔍 Web Search
+        # =================================================================
+        
+        all_context_parts = []
+        
+        # 📚 STEP 1: Query Knowledge Vault FIRST (highest confidence!)
+        vault_context = ""
+        if self.knowledge_vault and self.knowledge_vault.has_knowledge(connector_name):
+            vault_results = self.knowledge_vault.search(
+                connector_name=connector_name,
+                query=f"{section.name} {section.phase_name}",
+                top_k=3
+            )
+            
+            if vault_results:
+                vault_texts = []
+                for i, result in enumerate(vault_results, 1):
+                    vault_texts.append(f"[vault:{i}] **{result.title}** (confidence: {result.score:.2f})")
+                    vault_texts.append(f"Source Type: {result.source_type}")
+                    vault_texts.append(f"{result.text[:1000]}...")
+                    vault_texts.append("")
+                
+                vault_context = f"""
+📚 **Knowledge Vault Context (Pre-Indexed Official Documentation):**
+*This information was pre-indexed from official sources - HIGHEST CONFIDENCE*
+
+{chr(10).join(vault_texts)}
+
+---
+"""
+                all_context_parts.append(vault_context)
+                print(f"  📚 Knowledge Vault provided {len(vault_results)} results for Section {section.number}")
+        
+        # 🔮 STEP 2: Consult DocWhisperer
         docwhisperer_context = ""
         whisper = await self.doc_whisperer.get_library_docs(
             library_id=await self.doc_whisperer.resolve_library_id(connector_name) or "",
@@ -1962,15 +2043,16 @@ Confidence: {whisper.confidence}%
 
 ---
 """
+            all_context_parts.append(docwhisperer_context)
             print(f"  🔮 DocWhisperer provided wisdom for Section {section.number}: {section.name}")
         
-        # STEP 2: Fall back to web search for additional context
+        # 🔍 STEP 3: Fall back to web search for additional context
         search_query = f"{connector_name} API {section.name} documentation 2024 2025"
         web_results = await self._web_search(search_query)
         
-        # Combine DocWhisperer context with web results
-        if docwhisperer_context:
-            web_results = docwhisperer_context + "\n\n**Web Search Results (supplementary):**\n" + web_results
+        # Combine all context sources
+        if all_context_parts:
+            web_results = "\n".join(all_context_parts) + "\n\n**Web Search Results (supplementary):**\n" + web_results
         
         # Build the prompt
         prompts_text = "\n".join(f"- {p.format(connector=connector_name)}" for p in section.prompts)
@@ -2017,9 +2099,10 @@ Requirements:
 - Write 8-10 detailed sentences per subsection
 - Include exact values from documentation (OAuth scopes, permissions, rate limits)
 - Use markdown tables where appropriate
-- Include inline citations like [web:1], [web:2] referencing web search results
+- Include inline citations like [web:1], [web:2], [vault:1] referencing search results
+- When Knowledge Vault context is provided, PRIORITIZE that as the most authoritative source
+- When DocWhisperer context is provided, use it as secondary authoritative source
 - When structured context is provided (from Connector_Code, Connector_SDK, Public_Documentation), prioritize that information
-- When DocWhisperer context is provided, PRIORITIZE that as the authoritative source
 - Focus on data extraction (read operations), not write operations
 - If information is not available, explicitly state "N/A - not documented" or "N/A - not supported"
 """

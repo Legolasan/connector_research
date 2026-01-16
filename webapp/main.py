@@ -23,6 +23,7 @@ from services.github_cloner import get_github_cloner, GitHubCloner
 from services.research_agent import get_research_agent, ResearchAgent
 from services.vector_manager import get_vector_manager, VectorManager
 from services.fivetran_crawler import get_fivetran_crawler, FivetranCrawler
+from services.knowledge_vault import get_knowledge_vault, KnowledgeVault, KnowledgeSourceType
 
 
 # =====================
@@ -34,6 +35,61 @@ class FivetranUrlsRequest(BaseModel):
     setup_guide_url: Optional[str] = None
     connector_overview_url: Optional[str] = None
     schema_info_url: Optional[str] = None
+
+
+# =====================
+# 📚 Knowledge Vault Models
+# =====================
+
+class VaultIndexRequest(BaseModel):
+    """Request to index documentation into the Knowledge Vault."""
+    connector_name: str
+    title: str
+    content: str
+    source_type: str = "official_docs"  # official_docs, sdk_reference, erd_schema, changelog, fivetran_docs, airbyte_docs, custom
+    source_url: Optional[str] = None
+    version: Optional[str] = None
+
+
+class VaultIndexFromUrlRequest(BaseModel):
+    """Request to index documentation from a URL."""
+    connector_name: str
+    url: str
+    source_type: str = "official_docs"
+
+
+class VaultSearchRequest(BaseModel):
+    """Request to search the Knowledge Vault."""
+    connector_name: str
+    query: str
+    top_k: int = 5
+
+
+class VaultDocumentResponse(BaseModel):
+    """Response for indexed document."""
+    id: str
+    connector_name: str
+    title: str
+    source_type: str
+    source_url: Optional[str] = None
+    chunk_count: int
+
+
+class VaultSearchResultResponse(BaseModel):
+    """Search result from the vault."""
+    text: str
+    score: float
+    source_type: str
+    title: str
+    connector_name: str
+
+
+class VaultStatsResponse(BaseModel):
+    """Knowledge Vault statistics."""
+    available: bool
+    connector_count: int = 0
+    total_chunks: int = 0
+    connectors: List[Dict[str, Any]] = []
 
 
 class ConnectorCreateRequest(BaseModel):
@@ -125,6 +181,7 @@ github_cloner: Optional[GitHubCloner] = None
 research_agent: Optional[ResearchAgent] = None
 vector_manager: Optional[VectorManager] = None
 fivetran_crawler: Optional[FivetranCrawler] = None
+knowledge_vault: Optional[KnowledgeVault] = None
 
 # Background tasks tracking
 _running_research_tasks: Dict[str, asyncio.Task] = {}
@@ -133,7 +190,7 @@ _running_research_tasks: Dict[str, asyncio.Task] = {}
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Initialize services on startup."""
-    global connector_manager, github_cloner, research_agent, vector_manager, fivetran_crawler
+    global connector_manager, github_cloner, research_agent, vector_manager, fivetran_crawler, knowledge_vault
     
     # Initialize database first (if DATABASE_URL is set)
     if os.getenv("DATABASE_URL"):
@@ -183,6 +240,14 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         print(f"⚠ Fivetran Crawler not available: {e}")
         fivetran_crawler = None
+    
+    try:
+        knowledge_vault = get_knowledge_vault()
+        vault_stats = knowledge_vault.get_stats()
+        print(f"📚 Knowledge Vault initialized ({vault_stats.get('connector_count', 0)} connectors, {vault_stats.get('total_chunks', 0)} chunks)")
+    except Exception as e:
+        print(f"⚠ Knowledge Vault not available: {e}")
+        knowledge_vault = None
     
     yield
     
@@ -801,6 +866,201 @@ Answer based on the context above:"""
             for r in results[:3]
         ]
     )
+
+
+# =====================
+# 📚 Knowledge Vault Endpoints
+# =====================
+
+@app.get("/api/vault/stats", response_model=VaultStatsResponse)
+async def get_vault_stats():
+    """Get Knowledge Vault statistics."""
+    if not knowledge_vault:
+        raise HTTPException(status_code=503, detail="Knowledge Vault not initialized")
+    
+    stats = knowledge_vault.get_stats()
+    return VaultStatsResponse(
+        available=stats.get("available", False),
+        connector_count=stats.get("connector_count", 0),
+        total_chunks=stats.get("total_chunks", 0),
+        connectors=stats.get("connectors", [])
+    )
+
+
+@app.get("/api/vault/{connector_name}/stats")
+async def get_connector_vault_stats(connector_name: str):
+    """Get Knowledge Vault statistics for a specific connector."""
+    if not knowledge_vault:
+        raise HTTPException(status_code=503, detail="Knowledge Vault not initialized")
+    
+    stats = knowledge_vault.get_stats(connector_name)
+    return stats
+
+
+@app.post("/api/vault/index", response_model=VaultDocumentResponse)
+async def index_vault_document(request: VaultIndexRequest):
+    """Index documentation into the Knowledge Vault."""
+    if not knowledge_vault:
+        raise HTTPException(status_code=503, detail="Knowledge Vault not initialized")
+    
+    try:
+        source_type = KnowledgeSourceType(request.source_type)
+    except ValueError:
+        source_type = KnowledgeSourceType.CUSTOM
+    
+    try:
+        doc = knowledge_vault.index_document(
+            connector_name=request.connector_name,
+            title=request.title,
+            content=request.content,
+            source_type=source_type,
+            source_url=request.source_url,
+            version=request.version
+        )
+        
+        return VaultDocumentResponse(
+            id=doc.id,
+            connector_name=doc.connector_name,
+            title=doc.title,
+            source_type=doc.source_type.value,
+            source_url=doc.source_url,
+            chunk_count=doc.chunk_count
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/vault/index-url", response_model=VaultDocumentResponse)
+async def index_vault_from_url(request: VaultIndexFromUrlRequest):
+    """Index documentation from a URL into the Knowledge Vault."""
+    if not knowledge_vault:
+        raise HTTPException(status_code=503, detail="Knowledge Vault not initialized")
+    
+    try:
+        source_type = KnowledgeSourceType(request.source_type)
+    except ValueError:
+        source_type = KnowledgeSourceType.OFFICIAL_DOCS
+    
+    try:
+        doc = knowledge_vault.index_from_url(
+            connector_name=request.connector_name,
+            url=request.url,
+            source_type=source_type
+        )
+        
+        return VaultDocumentResponse(
+            id=doc.id,
+            connector_name=doc.connector_name,
+            title=doc.title,
+            source_type=doc.source_type.value,
+            source_url=doc.source_url,
+            chunk_count=doc.chunk_count
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/vault/index-file")
+async def index_vault_from_file(
+    connector_name: str = Form(...),
+    title: str = Form(...),
+    source_type: str = Form("official_docs"),
+    source_url: Optional[str] = Form(None),
+    file: UploadFile = File(...)
+):
+    """Upload and index a file into the Knowledge Vault."""
+    if not knowledge_vault:
+        raise HTTPException(status_code=503, detail="Knowledge Vault not initialized")
+    
+    try:
+        # Read file content
+        content = await file.read()
+        
+        # Try to decode as text
+        try:
+            text_content = content.decode('utf-8')
+        except UnicodeDecodeError:
+            # Try with different encoding
+            try:
+                text_content = content.decode('latin-1')
+            except:
+                raise HTTPException(status_code=400, detail="Could not decode file as text")
+        
+        try:
+            st = KnowledgeSourceType(source_type)
+        except ValueError:
+            st = KnowledgeSourceType.CUSTOM
+        
+        doc = knowledge_vault.index_document(
+            connector_name=connector_name,
+            title=title or file.filename,
+            content=text_content,
+            source_type=st,
+            source_url=source_url
+        )
+        
+        return {
+            "id": doc.id,
+            "connector_name": doc.connector_name,
+            "title": doc.title,
+            "source_type": doc.source_type.value,
+            "chunk_count": doc.chunk_count,
+            "filename": file.filename
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/vault/search", response_model=List[VaultSearchResultResponse])
+async def search_vault(request: VaultSearchRequest):
+    """Search the Knowledge Vault for a connector."""
+    if not knowledge_vault:
+        raise HTTPException(status_code=503, detail="Knowledge Vault not initialized")
+    
+    if not knowledge_vault.has_knowledge(request.connector_name):
+        return []
+    
+    results = knowledge_vault.search(
+        connector_name=request.connector_name,
+        query=request.query,
+        top_k=request.top_k
+    )
+    
+    return [
+        VaultSearchResultResponse(
+            text=r.text,
+            score=r.score,
+            source_type=r.source_type,
+            title=r.title,
+            connector_name=r.connector_name
+        )
+        for r in results
+    ]
+
+
+@app.delete("/api/vault/{connector_name}")
+async def delete_vault_knowledge(connector_name: str):
+    """Delete all knowledge for a connector from the vault."""
+    if not knowledge_vault:
+        raise HTTPException(status_code=503, detail="Knowledge Vault not initialized")
+    
+    deleted = knowledge_vault.delete_knowledge(connector_name)
+    
+    return {
+        "deleted": deleted,
+        "connector_name": connector_name,
+        "message": f"Knowledge for '{connector_name}' deleted" if deleted else f"No knowledge found for '{connector_name}'"
+    }
+
+
+@app.get("/api/vault/connectors")
+async def list_vault_connectors():
+    """List all connectors with knowledge in the vault."""
+    if not knowledge_vault:
+        raise HTTPException(status_code=503, detail="Knowledge Vault not initialized")
+    
+    connectors = knowledge_vault.list_connectors()
+    return {"connectors": connectors, "count": len(connectors)}
 
 
 if __name__ == "__main__":
