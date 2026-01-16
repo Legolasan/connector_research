@@ -220,6 +220,78 @@ async def index(request: Request):
     })
 
 
+@app.get("/connectors/{connector_id}/view", response_class=HTMLResponse)
+async def view_research_page(request: Request, connector_id: str):
+    """Render research document as a beautiful HTML page."""
+    import markdown
+    import re
+    
+    if not connector_manager:
+        raise HTTPException(status_code=503, detail="Connector Manager not initialized")
+    
+    connector = connector_manager.get_connector(connector_id)
+    if not connector:
+        raise HTTPException(status_code=404, detail=f"Connector '{connector_id}' not found")
+    
+    # Get research content
+    content = connector_manager.get_research_document(connector_id)
+    if not content:
+        raise HTTPException(status_code=404, detail=f"Research document not found for '{connector_id}'")
+    
+    # Convert markdown to HTML
+    md = markdown.Markdown(extensions=['tables', 'fenced_code', 'toc', 'nl2br'])
+    html_content = md.convert(content)
+    
+    # Extract table of contents from headings
+    toc_items = []
+    heading_pattern = re.compile(r'^(#{1,3})\s+(.+)$', re.MULTILINE)
+    for match in heading_pattern.finditer(content):
+        level = len(match.group(1))
+        title = match.group(2).strip()
+        # Create anchor from title
+        anchor = re.sub(r'[^\w\s-]', '', title.lower())
+        anchor = re.sub(r'[-\s]+', '-', anchor).strip('-')
+        toc_items.append({
+            'level': level,
+            'title': title,
+            'anchor': anchor
+        })
+    
+    return templates.TemplateResponse("research_view.html", {
+        "request": request,
+        "title": f"{connector.name} Research",
+        "connector": connector,
+        "content": html_content,
+        "raw_content": content,
+        "toc_items": toc_items
+    })
+
+
+@app.get("/api/connectors/{connector_id}/download")
+async def download_research(connector_id: str):
+    """Download research document as markdown file."""
+    from fastapi.responses import Response
+    
+    if not connector_manager:
+        raise HTTPException(status_code=503, detail="Connector Manager not initialized")
+    
+    connector = connector_manager.get_connector(connector_id)
+    if not connector:
+        raise HTTPException(status_code=404, detail=f"Connector '{connector_id}' not found")
+    
+    content = connector_manager.get_research_document(connector_id)
+    if not content:
+        raise HTTPException(status_code=404, detail=f"Research document not found")
+    
+    return Response(
+        content=content,
+        media_type="text/markdown",
+        headers={
+            "Content-Disposition": f"attachment; filename={connector_id}-research.md"
+        }
+    )
+
+
 @app.get("/health")
 async def health_check():
     """Health check endpoint for Railway."""

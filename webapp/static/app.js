@@ -232,20 +232,9 @@ function dashboard() {
             }
         },
         
-        async viewConnectorResearch(connectorId) {
-            try {
-                const response = await fetch(`/api/connectors/${connectorId}/research`);
-                if (response.ok) {
-                    const data = await response.json();
-                    // Open in new tab
-                    const blob = new Blob([data.content], { type: 'text/markdown' });
-                    const url = URL.createObjectURL(blob);
-                    window.open(url, '_blank');
-                }
-            } catch (error) {
-                console.error('View research error:', error);
-                alert('Failed to load research document');
-            }
+        viewConnectorResearch(connectorId) {
+            // Open the beautiful HTML research viewer in a new tab
+            window.open(`/connectors/${connectorId}/view`, '_blank');
         },
         
         searchConnector(connectorId) {
