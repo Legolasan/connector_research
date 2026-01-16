@@ -20,7 +20,7 @@ from pydantic import BaseModel
 from services.connector_manager import get_connector_manager, ConnectorManager, ConnectorStatus, FivetranUrls
 from services.github_cloner import get_github_cloner, GitHubCloner
 from services.research_agent import get_research_agent, ResearchAgent
-from services.pinecone_manager import get_pinecone_manager, PineconeManager
+from services.vector_manager import get_vector_manager, VectorManager
 from services.fivetran_crawler import get_fivetran_crawler, FivetranCrawler
 
 
@@ -119,7 +119,7 @@ class ChatResponse(BaseModel):
 connector_manager: Optional[ConnectorManager] = None
 github_cloner: Optional[GitHubCloner] = None
 research_agent: Optional[ResearchAgent] = None
-pinecone_manager: Optional[PineconeManager] = None
+vector_manager: Optional[VectorManager] = None
 fivetran_crawler: Optional[FivetranCrawler] = None
 
 # Background tasks tracking
@@ -129,7 +129,7 @@ _running_research_tasks: Dict[str, asyncio.Task] = {}
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Initialize services on startup."""
-    global connector_manager, github_cloner, research_agent, pinecone_manager, fivetran_crawler
+    global connector_manager, github_cloner, research_agent, vector_manager, fivetran_crawler
     
     # Initialize database first (if DATABASE_URL is set)
     if os.getenv("DATABASE_URL"):
@@ -167,11 +167,11 @@ async def lifespan(app: FastAPI):
         research_agent = None
     
     try:
-        pinecone_manager = get_pinecone_manager()
-        print("✓ Pinecone Manager initialized")
+        vector_manager = get_vector_manager()
+        print("✓ Vector Manager initialized (pgvector)")
     except Exception as e:
-        print(f"⚠ Pinecone Manager not available: {e}")
-        pinecone_manager = None
+        print(f"⚠ Vector Manager not available: {e}")
+        vector_manager = None
     
     try:
         fivetran_crawler = get_fivetran_crawler()
@@ -301,7 +301,7 @@ async def health_check():
             "connector_manager": connector_manager is not None,
             "github_cloner": github_cloner is not None,
             "research_agent": research_agent is not None,
-            "pinecone_manager": pinecone_manager is not None,
+            "vector_manager": vector_manager is not None,
             "fivetran_crawler": fivetran_crawler is not None
         }
     }
@@ -419,8 +419,8 @@ async def delete_connector(connector_id: str):
         raise HTTPException(status_code=404, detail=f"Connector '{connector_id}' not found")
     
     # Optionally delete Pinecone index
-    if pinecone_manager:
-        pinecone_manager.delete_index(connector_id)
+    if vector_manager:
+        vector_manager.delete_index(connector_id)
     
     return {"message": f"Connector '{connector_id}' deleted"}
 
@@ -495,8 +495,8 @@ async def generate_research(connector_id: str, background_tasks: BackgroundTasks
             
             # Vectorize into Pinecone
             vectors_count = 0
-            if pinecone_manager:
-                vectors_count = pinecone_manager.vectorize_research(
+            if vector_manager:
+                vectors_count = vector_manager.vectorize_research(
                     connector_id=connector_id,
                     connector_name=connector.name,
                     research_content=research_content
@@ -585,15 +585,15 @@ async def get_research_document(connector_id: str):
 @app.post("/api/search", response_model=SearchResponse)
 async def search(request: SearchRequest):
     """Search across connector research documents."""
-    if not pinecone_manager or not connector_manager:
+    if not vector_manager or not connector_manager:
         raise HTTPException(status_code=503, detail="Services not initialized")
     
     if request.connector_id:
         # Search within specific connector
-        if not pinecone_manager.index_exists(request.connector_id):
+        if not vector_manager.index_exists(request.connector_id):
             raise HTTPException(status_code=404, detail=f"No index found for connector '{request.connector_id}'")
         
-        results = pinecone_manager.search(
+        results = vector_manager.search(
             connector_id=request.connector_id,
             query=request.query,
             top_k=request.top_k
@@ -606,7 +606,7 @@ async def search(request: SearchRequest):
         if not connector_ids:
             return SearchResponse(query=request.query, results=[], total_results=0)
         
-        results = pinecone_manager.search_all_connectors(
+        results = vector_manager.search_all_connectors(
             query=request.query,
             connector_ids=connector_ids,
             top_k=request.top_k
@@ -632,14 +632,14 @@ async def search(request: SearchRequest):
 @app.post("/api/chat", response_model=ChatResponse)
 async def chat(request: ChatRequest):
     """Chat with connector research using RAG."""
-    if not pinecone_manager or not connector_manager or not research_agent:
+    if not vector_manager or not connector_manager or not research_agent:
         raise HTTPException(status_code=503, detail="Services not initialized")
     
     # Get relevant context
     if request.connector_id:
-        if not pinecone_manager.index_exists(request.connector_id):
+        if not vector_manager.index_exists(request.connector_id):
             raise HTTPException(status_code=404, detail=f"No index found for connector '{request.connector_id}'")
-        results = pinecone_manager.search(
+        results = vector_manager.search(
             connector_id=request.connector_id,
             query=request.message,
             top_k=request.top_k
@@ -655,7 +655,7 @@ async def chat(request: ChatRequest):
                 sources=[]
             )
         
-        results = pinecone_manager.search_all_connectors(
+        results = vector_manager.search_all_connectors(
             query=request.message,
             connector_ids=connector_ids,
             top_k=request.top_k

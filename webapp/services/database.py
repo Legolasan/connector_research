@@ -1,6 +1,7 @@
 """
 Database Service
 Handles PostgreSQL database connections and models for persistent storage.
+Includes pgvector support for vector similarity search.
 """
 
 import os
@@ -8,13 +9,24 @@ import json
 from typing import Optional, List, Dict, Any
 from datetime import datetime
 
-from sqlalchemy import create_engine, Column, String, Integer, Float, Text, DateTime, JSON, Boolean
+from sqlalchemy import create_engine, Column, String, Integer, Float, Text, DateTime, JSON, Boolean, Index, text
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, Session
 from sqlalchemy.pool import QueuePool
 
+# Try to import pgvector
+try:
+    from pgvector.sqlalchemy import Vector
+    PGVECTOR_AVAILABLE = True
+except ImportError:
+    PGVECTOR_AVAILABLE = False
+    Vector = None
+
 # Database URL from environment
 DATABASE_URL = os.getenv("DATABASE_URL")
+
+# Embedding dimension for text-embedding-3-small
+EMBEDDING_DIMENSION = 1536
 
 # SQLAlchemy setup
 Base = declarative_base()
@@ -88,6 +100,32 @@ class ResearchDocumentModel(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
+class DocumentChunkModel(Base):
+    """SQLAlchemy model for storing document chunks with embeddings."""
+    __tablename__ = "document_chunks"
+    
+    id = Column(String(255), primary_key=True)
+    connector_id = Column(String(255), index=True, nullable=False)
+    connector_name = Column(String(255), nullable=False)
+    chunk_index = Column(Integer, nullable=False)
+    text = Column(Text, nullable=False)
+    section = Column(String(255), default="General")
+    source_type = Column(String(50), default="research")
+    # Embedding stored as JSON array (fallback if pgvector not available)
+    embedding_json = Column(JSON, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    
+    # Add index for connector_id queries
+    __table_args__ = (
+        Index('idx_chunks_connector', 'connector_id'),
+    )
+
+
+# Add vector column dynamically if pgvector is available
+if PGVECTOR_AVAILABLE and Vector is not None:
+    DocumentChunkModel.embedding = Column(Vector(EMBEDDING_DIMENSION), nullable=True)
+
+
 def init_database() -> bool:
     """Initialize database connection and create tables.
     
@@ -121,6 +159,16 @@ def init_database() -> bool:
         
         # Create session factory
         SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+        
+        # Enable pgvector extension if available
+        if PGVECTOR_AVAILABLE:
+            try:
+                with engine.connect() as conn:
+                    conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
+                    conn.commit()
+                print("✓ pgvector extension enabled")
+            except Exception as e:
+                print(f"⚠ Could not enable pgvector extension: {e}")
         
         # Create tables
         Base.metadata.create_all(bind=engine)
