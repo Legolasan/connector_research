@@ -376,20 +376,7 @@
                         <input type="text" x-model="newConnector.name" required
                                placeholder="e.g., Facebook Ads, Salesforce, Stripe"
                                class="w-full px-4 py-3 bg-black/40 border border-white/10 rounded-xl focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none transition-all text-white placeholder-gray-500">
-                    </div>
-                    
-                                    <div>
-                        <label class="block text-sm font-medium text-gray-300 mb-2">Connector Type</label>
-                        <div class="grid grid-cols-4 gap-2">
-                            <template x-for="type in connectorTypes" :key="type.id">
-                                <button type="button"
-                                        @click="newConnector.type = type.id"
-                                        :class="newConnector.type === type.id ? 'bg-indigo-500/20 border-indigo-500/30 text-indigo-300' : 'bg-white/5 border-white/10 text-gray-400 hover:border-white/20'"
-                                        class="px-3 py-2 rounded-xl text-xs border transition-colors"
-                                        x-text="type.label">
-                                </button>
-                            </template>
-                        </div>
+                        <p class="text-xs text-gray-500 mt-2">The research will auto-discover all available extraction methods (REST, GraphQL, Webhooks, etc.)</p>
                     </div>
                     
                     <div>

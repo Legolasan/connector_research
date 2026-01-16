@@ -42,16 +42,20 @@ class ConnectorType(str, Enum):
 class ConnectorProgress:
     """Tracks research generation progress."""
     current_section: int = 0
-    total_sections: int = 18
+    total_sections: int = 0  # Dynamic - calculated based on discovered methods
     current_phase: int = 0
     sections_completed: List[int] = field(default_factory=list)
     sections_failed: List[int] = field(default_factory=list)
     current_section_name: str = ""
     research_method: Dict[int, str] = field(default_factory=dict)  # section -> method used
+    discovered_methods: List[str] = field(default_factory=list)  # Extraction methods found
     
     @property
     def percentage(self) -> float:
         if self.total_sections == 0:
+            # If total not yet calculated, estimate based on minimum sections
+            if self.sections_completed:
+                return min(95.0, len(self.sections_completed) * 5)
             return 0.0
         return (len(self.sections_completed) / self.total_sections) * 100
 
@@ -119,7 +123,7 @@ class Connector:
     """Represents a connector research project."""
     id: str  # slug, e.g., "facebook-ads"
     name: str  # Display name, e.g., "Facebook Ads"
-    connector_type: str
+    connector_type: str = "auto"  # Auto-discovered during research
     status: str = ConnectorStatus.NOT_STARTED.value
     github_url: Optional[str] = None
     description: str = ""
@@ -129,6 +133,9 @@ class Connector:
     
     # Manual input for object lists
     manual_input: Optional[ManualInput] = None
+    
+    # Auto-discovered extraction methods (REST, GraphQL, Webhooks, etc.)
+    discovered_methods: List[str] = field(default_factory=list)
     
     # Metadata
     objects_count: int = 0
@@ -487,7 +494,9 @@ class ConnectorManager:
         section_name: str = "",
         method: str = "web_search",
         completed: bool = False,
-        failed: bool = False
+        failed: bool = False,
+        total_sections: int = 0,
+        discovered_methods: List[str] = None
     ) -> Optional[Connector]:
         """Update research progress for a connector."""
         connector = self.get_connector(connector_id)
@@ -499,16 +508,31 @@ class ConnectorManager:
         progress.current_section_name = section_name
         progress.research_method[section] = method
         
-        # Calculate phase
-        phase_map = {
-            1: 1, 2: 1, 3: 1,
-            4: 2, 5: 2, 6: 2, 7: 2,
-            8: 3, 9: 3, 10: 3, 11: 3,
-            12: 4, 13: 4, 14: 4,
-            15: 5, 16: 5, 17: 5,
-            18: 6
-        }
-        progress.current_phase = phase_map.get(section, 0)
+        # Update total_sections if provided
+        if total_sections > 0:
+            progress.total_sections = total_sections
+        
+        # Update discovered_methods if provided
+        if discovered_methods:
+            progress.discovered_methods = discovered_methods
+            # Also update connector's discovered_methods
+            connector.discovered_methods = discovered_methods
+        
+        # Calculate phase dynamically based on section number and total
+        # Phase 1: Discovery (1-3)
+        # Phase 2: Method Deep Dives (4 to 3+num_methods)  
+        # Phase 3: Cross-Cutting (variable)
+        # Phase 4: Implementation (final sections)
+        num_methods = len(progress.discovered_methods) if progress.discovered_methods else 0
+        
+        if section <= 3:
+            progress.current_phase = 1  # Discovery
+        elif num_methods > 0 and section <= 3 + num_methods:
+            progress.current_phase = 2  # Method Deep Dives
+        elif num_methods > 0 and section <= 3 + num_methods + 5:
+            progress.current_phase = 3  # Cross-Cutting
+        else:
+            progress.current_phase = 4  # Implementation
         
         if completed and section not in progress.sections_completed:
             progress.sections_completed.append(section)

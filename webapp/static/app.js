@@ -23,7 +23,6 @@ function dashboard() {
         isCreatingConnector: false,
         newConnector: {
             name: '',
-            type: 'rest_api',
             github_url: '',
             fivetran_urls: {
                 setup_guide_url: '',
@@ -34,16 +33,6 @@ function dashboard() {
             manual_file: null,
             manual_text: ''
         },
-        connectorTypes: [
-            { id: 'rest_api', label: 'REST' },
-            { id: 'graphql', label: 'GraphQL' },
-            { id: 'soap', label: 'SOAP' },
-            { id: 'jdbc', label: 'JDBC' },
-            { id: 'sdk', label: 'SDK' },
-            { id: 'webhook', label: 'Webhook' },
-            { id: 'advertising', label: 'Ads' },
-            { id: 'warehouse', label: 'Warehouse' }
-        ],
 
         // Initialize
         async init() {
@@ -99,7 +88,6 @@ function dashboard() {
                 if (this.newConnector.manual_file) {
                     const formData = new FormData();
                     formData.append('name', this.newConnector.name);
-                    formData.append('connector_type', this.newConnector.type);
                     if (this.newConnector.github_url) {
                         formData.append('github_url', this.newConnector.github_url);
                     }
@@ -122,7 +110,6 @@ function dashboard() {
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
                             name: this.newConnector.name,
-                            connector_type: this.newConnector.type,
                             github_url: this.newConnector.github_url || null,
                             fivetran_urls: fivetranUrls,
                             description: this.newConnector.description || '',
@@ -181,7 +168,6 @@ function dashboard() {
         resetNewConnector() {
             this.newConnector = { 
                 name: '', 
-                type: 'rest_api', 
                 github_url: '', 
                 fivetran_urls: {
                     setup_guide_url: '',

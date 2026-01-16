@@ -1,9 +1,10 @@
 """
 Research Agent Service
-Auto-generates 19-section connector research documents.
+Auto-generates dynamic connector research documents with auto-discovered extraction methods.
 """
 
 import os
+import re
 import asyncio
 from typing import List, Dict, Any, Optional, Callable
 from dataclasses import dataclass, field
@@ -24,145 +25,172 @@ class ResearchSection:
     prompts: List[str]
     requires_fivetran: bool = False
     requires_code_analysis: bool = False
+    is_method_section: bool = False  # True if this is a per-method deep dive
+    method_name: str = ""  # The method this section covers (e.g., "REST API")
 
 
-# Define all 19 sections
-RESEARCH_SECTIONS = [
-    # Phase 1: Understand the Platform
-    ResearchSection(1, "Product Overview", 1, "Understand the Platform", [
+# Extraction methods to discover
+EXTRACTION_METHODS = [
+    "REST API",
+    "GraphQL API", 
+    "SOAP/XML API",
+    "Webhooks",
+    "Bulk/Batch API",
+    "Official SDK",
+    "JDBC/ODBC",
+    "File Export"
+]
+
+
+# Method section template - generated dynamically for each discovered method
+def create_method_section(method_name: str, section_number: int) -> ResearchSection:
+    """Create a deep-dive section for a specific extraction method."""
+    return ResearchSection(
+        number=section_number,
+        name=f"{method_name} Deep Dive",
+        phase=2,
+        phase_name="Extraction Methods",
+        is_method_section=True,
+        method_name=method_name,
+        prompts=[
+            f"Describe the {method_name} for {{connector}} in detail.",
+            f"**Authentication**: What authentication methods are supported for {method_name}? (OAuth, API Key, Basic Auth, etc.) Provide exact steps and code examples.",
+            f"**Base URL/Endpoint Structure**: What is the base URL? What is the endpoint naming convention?",
+            f"**Available Operations**: List all key endpoints/operations available via {method_name}. Create a table with: Operation Name, HTTP Method (if applicable), URL/Query, Description.",
+            f"**Objects Accessible**: Which data objects/entities can be accessed via {method_name}? Are there any objects NOT accessible via this method?",
+            f"**Pagination**: How does pagination work? (cursor-based, offset-based, page-based) What are the max records per request? Provide code example.",
+            f"**Rate Limits**: What are the specific rate limits for {method_name}? (requests per minute/hour/day) Are limits per user, app, or account?",
+            f"**Sync Capabilities**: What sync modes are supported via {method_name}? (Full Load, Incremental, CDC/Real-time) What cursor fields are available for incremental sync?",
+            f"**Delete Detection**: How can deletions be detected via {method_name}? (Soft delete fields, deleted endpoint, events, etc.)",
+            f"**Code Example**: Provide a complete Python code example showing how to authenticate and extract data from 2-3 key objects using {method_name}, including pagination handling.",
+            f"**Pros & Cons**: What are the advantages and disadvantages of using {method_name} compared to other available methods? When should you use this method vs others?"
+        ]
+    )
+
+
+# Base sections (always included)
+BASE_SECTIONS = [
+    # Phase 1: Discovery (Sections 1-3)
+    ResearchSection(1, "Platform Overview", 1, "Platform Discovery", [
         "What does {connector} do? Describe its purpose, target users, and main functionality.",
         "What are the key modules and features?",
         "What types of data entities does it store?",
         "Does it have reporting/analytics modules?",
-        "What are the limitations of its data model?"
+        "What are the limitations of its data model?",
+        "Who are the typical users (enterprise, SMB, developers)?"
     ]),
-    ResearchSection(2, "Sandbox/Dev Environments", 1, "Understand the Platform", [
+    
+    ResearchSection(2, "Extraction Methods Discovery", 1, "Platform Discovery", [
+        "**IMPORTANT**: Discover ALL available data extraction methods for {connector}. For each method that EXISTS, provide details. If a method does NOT exist, explicitly state 'Not Available'.",
+        "",
+        "Check for the following methods and report availability:",
+        "",
+        "1. **REST API**: Does {connector} have a REST API? If yes: What is the base URL? Is it documented? What version?",
+        "2. **GraphQL API**: Does {connector} have a GraphQL API? If yes: What is the endpoint? What schemas are available?",
+        "3. **SOAP/XML API**: Does {connector} have a SOAP or XML-based API? If yes: Where is the WSDL?",
+        "4. **Webhooks**: Does {connector} support webhooks for real-time events? If yes: What events are available?",
+        "5. **Bulk/Batch API**: Does {connector} have bulk data export or async batch APIs? If yes: How do they work?",
+        "6. **Official SDK**: Does {connector} provide official SDKs? If yes: What languages (Python, Java, Node.js, etc.)?",
+        "7. **JDBC/ODBC**: Does {connector} support direct database connections via JDBC/ODBC? If yes: What drivers?",
+        "8. **File Export**: Does {connector} support data export to files (CSV, JSON, etc.)? If yes: Manual or API-triggered?",
+        "",
+        "Create a summary table at the end:",
+        "| Method | Available | Base URL/Endpoint | Documentation Link | Best Use Case |",
+        "|--------|-----------|-------------------|-------------------|---------------|"
+    ]),
+    
+    ResearchSection(3, "Developer Environment", 1, "Platform Discovery", [
         "Does {connector} provide sandbox or developer environments?",
-        "How do you request sandbox access (self-service, sales, partner)?",
-        "Is sandbox permanent or temporary? What are refresh rules?",
-        "What are alternatives if sandbox is paid or limited?"
-    ]),
-    ResearchSection(3, "Pre-Call Configurations", 1, "Understand the Platform", [
-        "What prerequisites must be configured before API access works?",
-        "What feature toggles need to be enabled?",
-        "What integration/app registrations are required?",
+        "How do you request access (self-service, sales, partner program)?",
+        "What are the limitations of sandbox vs production?",
+        "How do you register a developer app/integration?",
+        "What credentials are needed (API keys, OAuth app, service account)?",
         "Are there IP whitelists or redirect URI requirements?",
-        "Provide a minimal health check code example."
+        "Provide a minimal health check code example to verify API access."
+    ]),
+]
+
+
+# Cross-cutting sections (always included, after method sections)
+CROSS_CUTTING_SECTIONS = [
+    ResearchSection(100, "Authentication Comparison", 3, "Cross-Cutting Concerns", [
+        "Compare authentication methods across ALL available extraction methods for {connector}.",
+        "Create a comparison table: Method | Auth Type | Token Lifetime | Refresh Strategy | Scopes Required",
+        "Which authentication method is recommended for production ETL pipelines?",
+        "What are the security best practices for credential management?",
+        "Provide unified authentication code that works across multiple methods."
     ]),
     
-    # Phase 2: Data Access Mechanisms
-    ResearchSection(4, "Data Access Mechanisms", 2, "Data Access Mechanisms", [
-        "What data access methods are available (REST, GraphQL, SOAP, JDBC, SDK, Webhooks)?",
-        "For each method, what are the rate limits and auth types?",
-        "Which method is best for historical extraction?",
-        "Which method is best for incremental sync?",
-        "Which method is best for high-volume analytics?"
-    ]),
-    ResearchSection(5, "Authentication Mechanics", 2, "Data Access Mechanisms", [
-        "What authentication methods are supported (OAuth 2.0, API Key, etc.)?",
-        "What are the exact OAuth scopes required for data extraction?",
-        "What roles/permissions are required? List exact permission names.",
-        "Provide Java/Python code examples for authentication."
-    ]),
-    ResearchSection(6, "App Registration & User Consent", 2, "Data Access Mechanisms", [
-        "What are the step-by-step instructions to register an app/integration?",
-        "How do you configure callback URLs and secrets?",
-        "How does multi-tenant consent work?",
-        "Can one app be used across multiple customer accounts?"
-    ]),
-    ResearchSection(7, "Metadata Discovery & Schema Introspection", 2, "Data Access Mechanisms", [
-        "What objects/entities are available? Create a catalog table.",
-        "Are there OpenAPI/WSDL schema definitions available?",
-        "How do you discover custom fields?",
-        "How do you use REST metadata endpoints or JDBC DatabaseMetaData?"
-    ], requires_fivetran=True, requires_code_analysis=True),
-    
-    # Phase 3: Sync Design & Extraction
-    ResearchSection(8, "Sync Strategies", 3, "Sync Design & Extraction", [
-        "For each object, what cursor field should be used for incremental sync?",
-        "What window strategies work best (time-based, ID-based)?",
-        "What load modes are supported (full load, incremental, CDC)?",
-        "Is reverse-historical sync recommended?"
-    ]),
-    ResearchSection(9, "Bulk Extraction & Billions of Rows", 3, "Sync Design & Extraction", [
-        "What bulk/async APIs or export mechanisms are available?",
-        "What are pagination rules and cursor fields?",
-        "What are the max records per request?",
-        "For JDBC, what streaming properties should be set (fetchSize, etc.)?"
-    ]),
-    ResearchSection(10, "Async Capabilities, Job Queues & Webhooks", 3, "Sync Design & Extraction", [
-        "What async job mechanisms exist (bulk jobs, export tasks, reports)?",
-        "How do you poll for job status?",
-        "What webhook events are available?",
-        "Can webhooks be used for incremental sync and delete detection?"
-    ]),
-    ResearchSection(11, "Deletion Handling", 3, "Sync Design & Extraction", [
-        "How are deletions represented (hard delete, soft delete, archive)?",
-        "Is there a deleted items endpoint?",
-        "Can deletions be detected via webhooks?",
-        "Are audit logs or tombstone tables available?"
+    ResearchSection(101, "Rate Limiting Strategy", 3, "Cross-Cutting Concerns", [
+        "Compare rate limits across ALL available extraction methods for {connector}.",
+        "Create a comparison table: Method | Requests/Min | Requests/Hour | Requests/Day | Concurrency Limit",
+        "Which method has the most generous rate limits for bulk extraction?",
+        "What retry strategies should be used when rate limited?",
+        "Provide a rate limiter implementation in Python that respects these limits."
     ]),
     
-    # Phase 4: Reliability & Performance
-    ResearchSection(12, "Rate Limits, Quotas & Concurrency", 4, "Reliability & Performance", [
-        "What are the exact rate limits (per minute, hour, day)?",
-        "Are limits per user, per account, or per app?",
-        "What are concurrency limits for API calls?",
-        "What is the recommended concurrency for bulk extraction?"
-    ]),
-    ResearchSection(13, "API Failure Types & Retry Strategy", 4, "Reliability & Performance", [
-        "What error codes indicate retryable errors?",
-        "What error codes indicate non-retryable errors?",
-        "What errors require re-authentication?",
-        "What retry strategy is recommended?"
-    ]),
-    ResearchSection(14, "Timeouts", 4, "Reliability & Performance", [
-        "What are the default timeout settings?",
-        "What are API-specific execution limits?",
-        "What are empirical limits observed by the community?",
-        "What JDBC driver timeouts should be configured?"
+    ResearchSection(102, "Error Handling & Retries", 3, "Cross-Cutting Concerns", [
+        "What error codes and responses are returned by {connector} APIs?",
+        "Create a table: Error Code | Meaning | Retryable? | Resolution",
+        "What errors require re-authentication vs simple retry?",
+        "What is the recommended exponential backoff strategy?",
+        "Provide error handling code with proper retry logic."
     ]),
     
-    # Phase 5: Advanced Considerations
-    ResearchSection(15, "Dependencies, Drivers & SDK Versions", 5, "Advanced Considerations", [
-        "What official SDKs are available (Java, Python, Node)?",
-        "What JDBC/ODBC drivers are available?",
-        "What are the version compatibility requirements?",
-        "Provide Maven/pip install instructions."
-    ]),
-    ResearchSection(16, "Operational Test Data & Runbooks", 5, "Advanced Considerations", [
-        "How do you generate test data for historical loads?",
-        "How do you insert, update, and delete test records?",
-        "How do you test custom fields/objects?",
-        "Which objects cannot have realistic test data generated?"
-    ]),
-    ResearchSection(17, "Relationships, Refresher Tasks & Multi-Account", 5, "Advanced Considerations", [
-        "What parent-child relationships exist between objects?",
+    ResearchSection(103, "Data Model & Relationships", 3, "Cross-Cutting Concerns", [
+        "Document the complete data model for {connector}.",
+        "What are all the main objects/entities?",
+        "What parent-child relationships exist? Create a relationship diagram or table.",
         "What is the correct load order for related objects?",
-        "Is a refresher task required for attribution windows?",
-        "How does multi-account setup work?"
-    ]),
-    
-    # Phase 6: Troubleshooting
-    ResearchSection(18, "Common Issues & Troubleshooting", 6, "Troubleshooting", [
-        "What are the top 10 common issues encountered?",
-        "What are typical auth failures and their resolutions?",
-        "What pagination issues commonly occur?",
-        "What timeout and rate limit issues occur?"
-    ]),
-    
-    # Phase 7: Object Catalog
-    ResearchSection(19, "Available Objects & Replication Guide", 7, "Object Catalog", [
-        "List ALL available objects/entities that can be extracted from {connector}. Create a comprehensive catalog table.",
-        "For each object, identify: Primary Key field, Cursor Field for incremental sync (e.g., updated_at, modified_date), Parent object if this is a child entity.",
-        "For each object, specify the exact extraction method: REST endpoint (e.g., GET /v1/accounts), GraphQL query, SOAP operation, SDK method, or other mechanism.",
-        "For each object, list required permissions/scopes needed to access that object.",
-        "For each object, identify the delete detection method: Soft Delete (specify field like is_deleted, deleted_at), Deleted Endpoint (specify URL like GET /deleted_records), Webhook (specify event like record.deleted), Audit Log, or None if hard deletes only.",
-        "Indicate if each object is supported by Fivetran (if Fivetran context is available). Mark with checkmark or 'Yes'/'No'.",
-        "Categorize objects into: Full Load Only (no reliable cursor), Incremental (has cursor field), CDC-capable (real-time change tracking).",
-        "Provide a sample Python code example showing how to extract records from 2-3 key objects with pagination.",
-        "Note any rate limits, pagination limits, or volume considerations specific to high-volume objects."
+        "Are there any circular dependencies to handle?",
+        "What foreign keys link objects together?"
     ], requires_fivetran=True, requires_code_analysis=True),
+    
+    ResearchSection(104, "Delete Detection Strategies", 3, "Cross-Cutting Concerns", [
+        "Compare delete detection methods across ALL extraction methods for {connector}.",
+        "Create a table: Method | Delete Detection | Field/Endpoint | Reliability",
+        "Which method is most reliable for detecting deletions?",
+        "How should soft deletes vs hard deletes be handled?",
+        "Provide code for delete detection using the recommended method."
+    ]),
+]
+
+
+# Final sections (always included, after cross-cutting)
+FINAL_SECTIONS = [
+    ResearchSection(200, "Recommended Extraction Strategy", 4, "Implementation Guide", [
+        "Based on all discovered methods, what is the RECOMMENDED extraction strategy for {connector}?",
+        "Consider: reliability, performance, completeness, delete detection, real-time needs.",
+        "Create a decision matrix: Use Case | Recommended Method | Reason",
+        "What combination of methods provides the best coverage?",
+        "Provide a high-level architecture diagram for a production ETL pipeline.",
+        "What are the trade-offs between different approaches?"
+    ]),
+    
+    ResearchSection(201, "Object Catalog & Replication Guide", 4, "Implementation Guide", [
+        "List ALL available objects/entities that can be extracted from {connector}.",
+        "Create a comprehensive catalog table with columns:",
+        "| Object | Extraction Method | Primary Key | Cursor Field | Sync Mode | Delete Method | Fivetran Support |",
+        "For each object, specify:",
+        "- Which extraction method(s) can access it",
+        "- Primary key field",
+        "- Best cursor field for incremental sync",
+        "- Supported sync modes (Full/Incremental/CDC)",
+        "- Delete detection method",
+        "- Whether Fivetran supports this object (if known)",
+        "Provide sample extraction code for the top 5 most important objects."
+    ], requires_fivetran=True, requires_code_analysis=True),
+    
+    ResearchSection(202, "Production Checklist", 4, "Implementation Guide", [
+        "Create a production readiness checklist for {connector} data extraction.",
+        "**Authentication**: [ ] OAuth app registered, [ ] Credentials secured, [ ] Token refresh implemented",
+        "**Rate Limiting**: [ ] Rate limiter configured, [ ] Backoff strategy implemented",
+        "**Error Handling**: [ ] All error codes handled, [ ] Alerts configured",
+        "**Monitoring**: [ ] Sync metrics tracked, [ ] Data quality checks in place",
+        "**Testing**: [ ] Sandbox testing complete, [ ] Load testing done",
+        "What are the top 10 things that can go wrong in production?",
+        "What monitoring and alerting should be in place?"
+    ]),
 ]
 
 
@@ -172,11 +200,12 @@ class ResearchProgress:
     connector_id: str
     connector_name: str
     current_section: int = 0
-    total_sections: int = 19
+    total_sections: int = 0  # Dynamic - calculated based on discovered methods
     status: str = "idle"  # idle, running, completed, failed, cancelled
     sections_completed: List[int] = field(default_factory=list)
     current_content: str = ""
     error_message: str = ""
+    discovered_methods: List[str] = field(default_factory=list)  # Methods found during discovery
 
 
 @dataclass
@@ -958,7 +987,7 @@ Requirements:
 - Focus on data extraction (read operations), not write operations
 - If information is not available, explicitly state "N/A - not documented" or "N/A - not supported"
 """
-        
+
         # Build section-specific context from structured data
         section_context = ""
         if structured_context:
@@ -1101,21 +1130,63 @@ Generate comprehensive markdown content for this section. Include:
 ---
 """
     
+    def _parse_discovered_methods(self, discovery_content: str) -> List[str]:
+        """Parse the discovery section content to extract available methods.
+        
+        Args:
+            discovery_content: The generated content for section 2 (Extraction Methods Discovery)
+            
+        Returns:
+            List of method names that were found to be available
+        """
+        discovered = []
+        content_lower = discovery_content.lower()
+        
+        # Check for each method
+        method_indicators = {
+            "REST API": ["rest api", "rest endpoint", "restful", "rest-based", "/api/v"],
+            "GraphQL API": ["graphql", "graph ql", "graphql endpoint", "graphql api"],
+            "SOAP/XML API": ["soap", "wsdl", "xml api", "soap endpoint"],
+            "Webhooks": ["webhook", "web hook", "event subscription", "push notification"],
+            "Bulk/Batch API": ["bulk api", "batch api", "async export", "bulk export", "batch request"],
+            "Official SDK": ["official sdk", "sdk available", "python sdk", "java sdk", "node sdk", "client library"],
+            "JDBC/ODBC": ["jdbc", "odbc", "database driver", "direct database"],
+            "File Export": ["file export", "csv export", "data export", "export to file", "downloadable report"]
+        }
+        
+        for method, indicators in method_indicators.items():
+            # Check if the method is mentioned positively (not "not available")
+            for indicator in indicators:
+                if indicator in content_lower:
+                    # Check it's not marked as unavailable
+                    idx = content_lower.find(indicator)
+                    surrounding = content_lower[max(0, idx-50):idx+100]
+                    if "not available" not in surrounding and "unavailable" not in surrounding and "does not" not in surrounding and "no " + indicator not in surrounding:
+                        if method not in discovered:
+                            discovered.append(method)
+                        break
+        
+        # If nothing found, default to REST API (most common)
+        if not discovered:
+            discovered = ["REST API"]
+        
+        return discovered
+    
     async def generate_research(
         self,
         connector_id: str,
         connector_name: str,
-        connector_type: str,
+        connector_type: str = "auto",
         github_context: Optional[Dict[str, Any]] = None,
         fivetran_context: Optional[Dict[str, Any]] = None,
         on_progress: Optional[Callable[[ResearchProgress], None]] = None
     ) -> str:
-        """Generate complete research document for a connector.
+        """Generate complete research document for a connector with dynamic method discovery.
         
         Args:
             connector_id: Connector ID
             connector_name: Connector display name
-            connector_type: Type of connector
+            connector_type: Type of connector (default "auto" for discovery)
             github_context: Optional extracted code patterns from GitHub
             fivetran_context: Optional Fivetran documentation context for parity comparison
             on_progress: Optional callback for progress updates
@@ -1145,93 +1216,35 @@ Generate comprehensive markdown content for this section. Include:
         research_method_parts = ["Automated generation using web search"]
         if github_context:
             if is_structured:
-                research_method_parts.append("structured repository analysis (Connector_Code, Connector_SDK, Public_Documentation)")
+                research_method_parts.append("structured repository analysis")
             else:
                 research_method_parts.append("GitHub code analysis")
         if fivetran_context:
             research_method_parts.append("Fivetran documentation parity analysis")
         
-        # Initialize document with header
-        document_parts = [f"""# 📚 Connector Research: {connector_name}
-
-**Subject:** {connector_name} Connector - Full Production Research  
-**Status:** Complete  
-**Generated:** {datetime.utcnow().strftime('%Y-%m-%d')}  
-**Sections:** 19 comprehensive research sections
-
----
-
-## 📝 Research Overview
-
-**Goal:** Produce exhaustive, production-grade research on building a data connector for {connector_name}.
-
-**Connector Type:** {connector_type}
-
-**Research Method:** {' and '.join(research_method_parts)}
-
-{f"**Repository Structure:** Structured (Connector_Code, Connector_SDK, Public_Documentation)" if is_structured else ""}
-
----
-"""]
+        # Prepare GitHub context string
+        github_context_str = self._build_github_context_string(github_context, is_structured, structured_context)
         
-        # Generate Quick Summary Dashboard
-        quick_summary = self._generate_quick_summary(
-            connector_name=connector_name,
-            connector_type=connector_type,
-            github_context=github_context,
-            fivetran_context=fivetran_context
-        )
-        document_parts.append(quick_summary)
+        # Initialize document with header (section count will be updated later)
+        document_parts = []
+        discovered_methods = []
         
-        # Prepare GitHub context string (for legacy flat format)
-        github_context_str = ""
-        if github_context and not is_structured:
-            github_context_str = f"""
-Repository: {github_context.get('repo_url', 'N/A')}
-Languages: {', '.join(github_context.get('languages_detected', []))}
-Objects Found: {', '.join(github_context.get('object_types', [])[:20])}
-API Endpoints: {', '.join(github_context.get('api_endpoints', [])[:10])}
-Auth Patterns: {', '.join(github_context.get('auth_patterns', []))}
-"""
-        elif github_context and is_structured:
-            # Provide summary for structured repos
-            impl = structured_context.get('implementation', {})
-            sdk = structured_context.get('sdk', {})
-            docs = structured_context.get('documentation', {})
-            github_context_str = f"""
-Repository: {github_context.get('repo_url', 'N/A')}
-Structure: Structured Repository Format
-SDK Name: {sdk.get('sdk_name', 'N/A')}
-Implementation Models: {len(impl.get('models', []))} found
-SDK Methods: {len(sdk.get('available_methods', []))} found
-SDK Data Types: {len(sdk.get('data_types', []))} found
-Documentation Endpoints: {len(docs.get('endpoints_list', []))} documented
-"""
+        # ========================================
+        # PHASE 1: Discovery Sections (1-3)
+        # ========================================
+        print(f"  Phase 1: Platform Discovery")
         
-        # Generate each section
-        for section in RESEARCH_SECTIONS:
+        discovery_content = ""
+        for section in BASE_SECTIONS:
             if self._cancel_requested:
                 self._current_progress.status = "cancelled"
                 break
             
-            # Update progress
             self._current_progress.current_section = section.number
             self._current_progress.current_content = f"Generating Section {section.number}: {section.name}..."
             
             if on_progress:
                 on_progress(self._current_progress)
-            
-            # Build Fivetran context for this section
-            section_fivetran_context = ""
-            if fivetran_context:
-                # Use provided Fivetran documentation context
-                section_fivetran_context = self._build_fivetran_section_context(section.number, fivetran_context)
-            elif section.requires_fivetran:
-                # Fallback to web search if no Fivetran URLs were provided
-                fivetran_search = await self._web_search(
-                    f"Fivetran {connector_name} connector ERD objects supported"
-                )
-                section_fivetran_context = fivetran_search
             
             # Generate section
             section_content = await self._generate_section(
@@ -1239,18 +1252,206 @@ Documentation Endpoints: {len(docs.get('endpoints_list', []))} documented
                 connector_name=connector_name,
                 connector_type=connector_type,
                 github_context=github_context_str if section.requires_code_analysis else "",
+                fivetran_context="",
+                structured_context=structured_context
+            )
+            
+            # Save discovery section content for parsing
+            if section.number == 2:
+                discovery_content = section_content
+            
+            document_parts.append(section_content)
+            self._current_progress.sections_completed.append(section.number)
+            await asyncio.sleep(1)
+        
+        # Parse discovered methods from Section 2
+        discovered_methods = self._parse_discovered_methods(discovery_content)
+        self._current_progress.discovered_methods = discovered_methods
+        print(f"  Discovered extraction methods: {', '.join(discovered_methods)}")
+        
+        # Calculate total sections
+        total_sections = len(BASE_SECTIONS) + len(discovered_methods) + len(CROSS_CUTTING_SECTIONS) + len(FINAL_SECTIONS)
+        self._current_progress.total_sections = total_sections
+        
+        # ========================================
+        # PHASE 2: Per-Method Deep Dives (Dynamic)
+        # ========================================
+        print(f"  Phase 2: Extraction Methods ({len(discovered_methods)} methods)")
+        
+        method_section_number = 4  # Start after base sections
+        for method in discovered_methods:
+            if self._cancel_requested:
+                self._current_progress.status = "cancelled"
+                break
+            
+            method_section = create_method_section(method, method_section_number)
+            
+            self._current_progress.current_section = method_section_number
+            self._current_progress.current_content = f"Generating Section {method_section_number}: {method} Deep Dive..."
+            
+            if on_progress:
+                on_progress(self._current_progress)
+            
+            section_content = await self._generate_section(
+                section=method_section,
+                connector_name=connector_name,
+                connector_type=connector_type,
+                github_context=github_context_str,
+                fivetran_context="",
+                structured_context=structured_context
+            )
+            
+            document_parts.append(section_content)
+            self._current_progress.sections_completed.append(method_section_number)
+            method_section_number += 1
+            await asyncio.sleep(1)
+        
+        # ========================================
+        # PHASE 3: Cross-Cutting Concerns
+        # ========================================
+        print(f"  Phase 3: Cross-Cutting Concerns")
+        
+        # Prepare methods list for cross-cutting context
+        methods_context = f"Available extraction methods for {connector_name}: {', '.join(discovered_methods)}"
+        
+        for i, section in enumerate(CROSS_CUTTING_SECTIONS):
+            if self._cancel_requested:
+                self._current_progress.status = "cancelled"
+                break
+            
+            actual_section_number = method_section_number + i
+            section_copy = ResearchSection(
+                number=actual_section_number,
+                name=section.name,
+                phase=section.phase,
+                phase_name=section.phase_name,
+                prompts=section.prompts,
+                requires_fivetran=section.requires_fivetran,
+                requires_code_analysis=section.requires_code_analysis
+            )
+            
+            self._current_progress.current_section = actual_section_number
+            self._current_progress.current_content = f"Generating Section {actual_section_number}: {section.name}..."
+            
+            if on_progress:
+                on_progress(self._current_progress)
+            
+            # Build Fivetran context
+            section_fivetran_context = ""
+            if fivetran_context and section.requires_fivetran:
+                section_fivetran_context = self._build_fivetran_section_context(section.number, fivetran_context)
+            
+            section_content = await self._generate_section(
+                section=section_copy,
+                connector_name=connector_name,
+                connector_type=connector_type,
+                github_context=github_context_str + "\n\n" + methods_context if section.requires_code_analysis else methods_context,
                 fivetran_context=section_fivetran_context,
                 structured_context=structured_context
             )
             
             document_parts.append(section_content)
-            self._current_progress.sections_completed.append(section.number)
-            
-            # Small delay to avoid rate limits
+            self._current_progress.sections_completed.append(actual_section_number)
             await asyncio.sleep(1)
         
-        # Add final sections with improved formatting
-        document_parts.append("""
+        # ========================================
+        # PHASE 4: Implementation Guide
+        # ========================================
+        print(f"  Phase 4: Implementation Guide")
+        
+        final_section_start = method_section_number + len(CROSS_CUTTING_SECTIONS)
+        for i, section in enumerate(FINAL_SECTIONS):
+            if self._cancel_requested:
+                self._current_progress.status = "cancelled"
+                break
+            
+            actual_section_number = final_section_start + i
+            section_copy = ResearchSection(
+                number=actual_section_number,
+                name=section.name,
+                phase=section.phase,
+                phase_name=section.phase_name,
+                prompts=section.prompts,
+                requires_fivetran=section.requires_fivetran,
+                requires_code_analysis=section.requires_code_analysis
+            )
+            
+            self._current_progress.current_section = actual_section_number
+            self._current_progress.current_content = f"Generating Section {actual_section_number}: {section.name}..."
+            
+            if on_progress:
+                on_progress(self._current_progress)
+            
+            # Build Fivetran context
+            section_fivetran_context = ""
+            if fivetran_context and section.requires_fivetran:
+                section_fivetran_context = self._build_fivetran_section_context(section.number, fivetran_context)
+            
+            section_content = await self._generate_section(
+                section=section_copy,
+                connector_name=connector_name,
+                connector_type=connector_type,
+                github_context=github_context_str + "\n\n" + methods_context if section.requires_code_analysis else methods_context,
+                fivetran_context=section_fivetran_context,
+                structured_context=structured_context
+            )
+            
+            document_parts.append(section_content)
+            self._current_progress.sections_completed.append(actual_section_number)
+            await asyncio.sleep(1)
+        
+        # ========================================
+        # Build Final Document
+        # ========================================
+        
+        # Create document header with accurate section count
+        header = f"""# 📚 Connector Research: {connector_name}
+
+**Subject:** {connector_name} Connector - Full Production Research  
+**Status:** Complete  
+**Generated:** {datetime.utcnow().strftime('%Y-%m-%d')}  
+**Total Sections:** {total_sections}  
+**Discovered Methods:** {', '.join(discovered_methods)}
+
+---
+
+## 📝 Research Overview
+
+**Goal:** Produce exhaustive, production-grade research on building a data connector for {connector_name}.
+
+**Extraction Methods Discovered:** {len(discovered_methods)} ({', '.join(discovered_methods)})
+
+**Research Method:** {' and '.join(research_method_parts)}
+
+{f"**Repository Structure:** Structured (Connector_Code, Connector_SDK, Public_Documentation)" if is_structured else ""}
+
+---
+
+## 📑 Document Structure
+
+| Phase | Sections | Content |
+|-------|----------|---------|
+| 1. Platform Discovery | 1-3 | Overview, Methods Discovery, Dev Environment |
+| 2. Extraction Methods | 4-{3 + len(discovered_methods)} | Deep dive for each discovered method |
+| 3. Cross-Cutting | {4 + len(discovered_methods)}-{3 + len(discovered_methods) + len(CROSS_CUTTING_SECTIONS)} | Auth, Rate Limits, Errors, Data Model, Deletes |
+| 4. Implementation | {4 + len(discovered_methods) + len(CROSS_CUTTING_SECTIONS)}-{total_sections} | Strategy, Object Catalog, Checklist |
+
+---
+"""
+        
+        # Generate Quick Summary Dashboard
+        quick_summary = self._generate_quick_summary(
+            connector_name=connector_name,
+            connector_type=', '.join(discovered_methods) if discovered_methods else "auto",
+            github_context=github_context,
+            fivetran_context=fivetran_context
+        )
+        
+        # Combine all parts
+        full_document = header + quick_summary + '\n'.join(document_parts)
+        
+        # Add final deliverables section
+        final_section = f"""
 
 ---
 
@@ -1263,15 +1464,13 @@ Documentation Endpoints: {len(docs.get('endpoints_list', []))} documented
 | **Critical** | Implement exponential backoff for rate limit handling |
 | **Critical** | Implement proper OAuth token refresh before expiration |
 | **Critical** | Handle pagination consistently across all objects |
-| **High** | Use incremental sync with lastModifiedDate cursor where available |
-| **High** | Implement delete detection via soft delete flags or audit logs |
+| **High** | Use incremental sync with cursor where available |
+| **High** | Implement delete detection mechanism |
 | **High** | Set appropriate timeouts for long-running operations |
 | **Medium** | Use bulk APIs for historical loads when available |
-| **Medium** | Implement proper error categorization (retryable vs non-retryable) |
+| **Medium** | Implement proper error categorization |
 | **Medium** | Monitor API usage against quotas |
-| **Medium** | Test thoroughly with sandbox environment before production |
 | **Low** | Document all custom field mappings |
-| **Low** | Implement proper parent-child load ordering |
 
 ---
 
@@ -1299,17 +1498,18 @@ This research document was generated using:
 |--------|-------------|
 | **Tavily API** | Web search for official documentation |
 | **OpenAI GPT-4** | AI synthesis and analysis |
-""")
+"""
         
         if github_context:
             repo_url = github_context.get('repo_url', 'N/A')
             if is_structured:
-                document_parts.append(f"""| **GitHub Repository** | `{repo_url}` |
+                final_section += f"""| **GitHub Repository** | `{repo_url}` |
 | | Connector_Code: Implementation patterns |
 | | Connector_SDK: SDK methods, data types |
-| | Public_Documentation: API reference |""")
+| | Public_Documentation: API reference |
+"""
             else:
-                document_parts.append(f"| **GitHub Repository** | `{repo_url}` |")
+                final_section += f"| **GitHub Repository** | `{repo_url}` |\n"
         
         if fivetran_context:
             fivetran_sources = []
@@ -1319,9 +1519,9 @@ This research document was generated using:
                 fivetran_sources.append("Connector Overview")
             if fivetran_context.get('has_schema'):
                 fivetran_sources.append("Schema Information")
-            document_parts.append(f"| **Fivetran Docs** | {', '.join(fivetran_sources)} |")
+            final_section += f"| **Fivetran Docs** | {', '.join(fivetran_sources)} |\n"
         
-        document_parts.append(f"""
+        final_section += f"""
 
 ---
 
@@ -1331,16 +1531,16 @@ This research document was generated using:
 |---|---|
 | **Generated By** | Connector Research Agent |
 | **Generated On** | {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')} |
-| **Total Sections** | 19 |
-| **Version** | 1.0 |
+| **Total Sections** | {total_sections} |
+| **Discovered Methods** | {', '.join(discovered_methods)} |
+| **Version** | 2.0 (Dynamic Discovery) |
 
 ---
 
 *End of Document*
-""")
+"""
         
-        # Combine all parts
-        full_document = "\n".join(document_parts)
+        full_document += final_section
         
         # Update final status
         if not self._cancel_requested:
@@ -1351,6 +1551,47 @@ This research document was generated using:
             on_progress(self._current_progress)
         
         return full_document
+    
+    def _build_github_context_string(
+        self,
+        github_context: Optional[Dict[str, Any]],
+        is_structured: bool,
+        structured_context: Optional[Dict[str, Any]]
+    ) -> str:
+        """Build GitHub context string for prompts.
+        
+        Args:
+            github_context: GitHub context dict
+            is_structured: Whether repo has structured format
+            structured_context: Structured context dict
+            
+        Returns:
+            Formatted context string
+        """
+        if not github_context:
+            return ""
+        
+        if not is_structured:
+            return f"""
+Repository: {github_context.get('repo_url', 'N/A')}
+Languages: {', '.join(github_context.get('languages_detected', []))}
+Objects Found: {', '.join(github_context.get('object_types', [])[:20])}
+API Endpoints: {', '.join(github_context.get('api_endpoints', [])[:10])}
+Auth Patterns: {', '.join(github_context.get('auth_patterns', []))}
+"""
+        else:
+            impl = structured_context.get('implementation', {}) if structured_context else {}
+            sdk = structured_context.get('sdk', {}) if structured_context else {}
+            docs = structured_context.get('documentation', {}) if structured_context else {}
+            return f"""
+Repository: {github_context.get('repo_url', 'N/A')}
+Structure: Structured Repository Format
+SDK Name: {sdk.get('sdk_name', 'N/A')}
+Implementation Models: {len(impl.get('models', []))} found
+SDK Methods: {len(sdk.get('available_methods', []))} found
+SDK Data Types: {len(sdk.get('data_types', []))} found
+Documentation Endpoints: {len(docs.get('endpoints_list', []))} documented
+"""
 
 
 # Singleton instance

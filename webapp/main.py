@@ -38,7 +38,7 @@ class FivetranUrlsRequest(BaseModel):
 
 class ConnectorCreateRequest(BaseModel):
     name: str
-    connector_type: str
+    connector_type: Optional[str] = "auto"  # Auto-discovered during research
     github_url: Optional[str] = None
     fivetran_urls: Optional[FivetranUrlsRequest] = None
     description: str = ""
@@ -52,6 +52,7 @@ class ConnectorProgressResponse(BaseModel):
     sections_completed: List[int]
     percentage: float
     current_section_name: str
+    discovered_methods: List[str] = []
 
 
 class FivetranUrlsResponse(BaseModel):
@@ -69,6 +70,7 @@ class ConnectorResponse(BaseModel):
     github_url: Optional[str]
     fivetran_urls: Optional[FivetranUrlsResponse]
     description: str
+    discovered_methods: List[str] = []  # Auto-discovered extraction methods
     objects_count: int
     vectors_count: int
     fivetran_parity: Optional[float]
@@ -331,6 +333,7 @@ def _connector_to_response(connector) -> ConnectorResponse:
         github_url=connector.github_url,
         fivetran_urls=fivetran_urls_response,
         description=connector.description,
+        discovered_methods=connector.discovered_methods or [],
         objects_count=connector.objects_count,
         vectors_count=connector.vectors_count,
         fivetran_parity=connector.fivetran_parity,
@@ -340,7 +343,8 @@ def _connector_to_response(connector) -> ConnectorResponse:
             current_phase=connector.progress.current_phase,
             sections_completed=connector.progress.sections_completed,
             percentage=connector.progress.percentage,
-            current_section_name=connector.progress.current_section_name
+            current_section_name=connector.progress.current_section_name,
+            discovered_methods=connector.progress.discovered_methods if hasattr(connector.progress, 'discovered_methods') else []
         ),
         created_at=connector.created_at,
         updated_at=connector.updated_at,
@@ -396,7 +400,7 @@ async def create_connector(request: ConnectorCreateRequest):
 @app.post("/api/connectors/upload", response_model=ConnectorResponse)
 async def create_connector_with_file(
     name: str = Form(...),
-    connector_type: str = Form(...),
+    connector_type: Optional[str] = Form("auto"),  # Auto-discovered during research
     github_url: Optional[str] = Form(None),
     fivetran_urls: Optional[str] = Form(None),  # JSON string
     manual_text: Optional[str] = Form(None),
@@ -565,7 +569,9 @@ async def generate_research(connector_id: str, background_tasks: BackgroundTasks
                     connector_id,
                     section=progress.current_section,
                     section_name=progress.current_content[:50] if progress.current_content else "",
-                    completed=(progress.current_section in progress.sections_completed)
+                    completed=(progress.current_section in progress.sections_completed),
+                    total_sections=progress.total_sections,
+                    discovered_methods=progress.discovered_methods if hasattr(progress, 'discovered_methods') else None
                 )
             
             research_content = await research_agent.generate_research(
