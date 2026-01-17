@@ -229,7 +229,7 @@ def init_database() -> bool:
                     
                     # Auto-add missing columns (for deployments where migrations haven't run)
                     try:
-                        # Check if hevo_github_url column exists
+                        # Check and add hevo_github_url column to connectors
                         hevo_col_exists = conn.execute(text("""
                             SELECT EXISTS (
                                 SELECT FROM information_schema.columns 
@@ -238,12 +238,38 @@ def init_database() -> bool:
                         """)).scalar()
                         
                         if not hevo_col_exists:
-                            print("⚠ Adding missing column: hevo_github_url")
+                            print("⚠ Adding missing column: connectors.hevo_github_url")
                             conn.execute(text("ALTER TABLE connectors ADD COLUMN hevo_github_url VARCHAR(500)"))
                             conn.commit()
                             print("✓ Added hevo_github_url column")
+                        
+                        # Check and add claim graph columns to research_documents
+                        claim_graph_columns = [
+                            ("citation_report_json", "JSONB"),
+                            ("citation_overrides_json", "JSONB"),
+                            ("validation_attempts", "INTEGER"),
+                            ("assumptions_section", "TEXT"),
+                            ("claims_json", "JSONB"),
+                            ("canonical_facts_json", "JSONB"),
+                            ("evidence_map_json", "JSONB"),
+                        ]
+                        
+                        for col_name, col_type in claim_graph_columns:
+                            col_exists = conn.execute(text(f"""
+                                SELECT EXISTS (
+                                    SELECT FROM information_schema.columns 
+                                    WHERE table_name = 'research_documents' AND column_name = '{col_name}'
+                                )
+                            """)).scalar()
+                            
+                            if not col_exists:
+                                print(f"⚠ Adding missing column: research_documents.{col_name}")
+                                conn.execute(text(f"ALTER TABLE research_documents ADD COLUMN {col_name} {col_type}"))
+                                conn.commit()
+                                print(f"✓ Added {col_name} column")
+                                
                     except Exception as col_error:
-                        print(f"⚠ Could not add missing column: {col_error}")
+                        print(f"⚠ Could not add missing columns: {col_error}")
                     
                     # Check migration status (warn if pending, but don't block)
                     try:
