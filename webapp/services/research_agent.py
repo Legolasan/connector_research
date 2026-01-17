@@ -2813,10 +2813,18 @@ Generate comprehensive markdown content for this section with PROPER CITATIONS.
         )
         
         if should_stop:
+            # Create a proper StopTheLineEvent for citation validation failure
+            citation_stop_event = StopTheLineEvent(
+                reason="CITATION_VALIDATION_FAILED",
+                contradictions=[],
+                section_number=section.number,
+                required_action="HUMAN_REVIEW",
+                uncertainty_flags=[]
+            )
             return {
                 "content": content,
                 "review": None,
-                "stop_the_line": True
+                "stop_the_line": citation_stop_event
             }
         
         # Validate evidence integrity
