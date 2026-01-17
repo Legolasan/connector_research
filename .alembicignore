@@ -1,0 +1,15 @@
+# Ignore directories that shouldn't be scanned for SQLAlchemy models
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+venv/
+.venv/
+env/
+.env
+*.db
+*.sqlite
+.idea/
+.vscode/
+.DS_Store

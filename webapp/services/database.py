@@ -43,6 +43,7 @@ class ConnectorModel(Base):
     connector_type = Column(String(50), nullable=False)
     status = Column(String(50), default="not_started")
     github_url = Column(String(500), nullable=True)
+    hevo_github_url = Column(String(500), nullable=True)  # Optional Hevo connector GitHub URL
     description = Column(Text, default="")
     
     # Fivetran URLs stored as JSON
@@ -98,6 +99,17 @@ class ResearchDocumentModel(Base):
     content = Column(Text, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # Citation validation columns
+    citation_report_json = Column(JSON, nullable=True)
+    citation_overrides_json = Column(JSON, nullable=True)
+    validation_attempts = Column(Integer, default=0, nullable=True)
+    assumptions_section = Column(Text, nullable=True)
+    
+    # Claim graph storage columns
+    claims_json = Column(JSON, nullable=True)
+    canonical_facts_json = Column(JSON, nullable=True)
+    evidence_map_json = Column(JSON, nullable=True)
 
 
 class DocumentChunkModel(Base):
@@ -194,68 +206,48 @@ def init_database() -> bool:
                 print("  → Will use embedding_json (JSON) storage instead")
         
         # Only add VECTOR column if extension is actually available
+        # Note: This is for runtime use. Schema changes should be done via Alembic migrations.
         if PGVECTOR_EXTENSION_AVAILABLE and not hasattr(DocumentChunkModel, 'embedding'):
             DocumentChunkModel.embedding = Column(Vector(EMBEDDING_DIMENSION), nullable=True)
         
-        # Create tables (will use embedding_json only if pgvector not available)
+        # Verify database tables exist (but don't create them - that's handled by Alembic migrations)
         try:
-            Base.metadata.create_all(bind=engine)
-            
-            # If pgvector is now available and table exists, check if we need to add VECTOR column
-            if PGVECTOR_EXTENSION_AVAILABLE:
-                with engine.connect() as conn:
-                    # Check if document_chunks table exists
-                    table_exists = conn.execute(text("""
-                        SELECT EXISTS (
-                            SELECT FROM information_schema.tables 
-                            WHERE table_name = 'document_chunks'
-                        )
-                    """)).scalar()
+            with engine.connect() as conn:
+                # Check if tables exist
+                tables_exist = conn.execute(text("""
+                    SELECT EXISTS (
+                        SELECT FROM information_schema.tables 
+                        WHERE table_name IN ('connectors', 'research_documents', 'document_chunks')
+                    )
+                """)).scalar()
+                
+                if not tables_exist:
+                    print("⚠ Database tables not found. Run migrations first: python migrate.py upgrade")
+                    print("  → For existing databases, run: alembic stamp head")
+                else:
+                    print("✓ Database tables verified")
                     
-                    if table_exists:
-                        # Check if embedding column exists
-                        column_exists = conn.execute(text("""
+                    # Check migration status (warn if pending, but don't block)
+                    try:
+                        # Check if alembic_version table exists
+                        alembic_version_exists = conn.execute(text("""
                             SELECT EXISTS (
-                                SELECT FROM information_schema.columns 
-                                WHERE table_name = 'document_chunks' 
-                                AND column_name = 'embedding'
+                                SELECT FROM information_schema.tables 
+                                WHERE table_name = 'alembic_version'
                             )
                         """)).scalar()
                         
-                        if not column_exists:
-                            print("📊 Migrating: Adding VECTOR column to existing document_chunks table...")
-                            try:
-                                conn.execute(text(f"""
-                                    ALTER TABLE document_chunks 
-                                    ADD COLUMN embedding VECTOR({EMBEDDING_DIMENSION})
-                                """))
-                                conn.commit()
-                                print("✓ VECTOR column added successfully")
-                                
-                                # Migrate existing embeddings from JSON to VECTOR
-                                # Note: We'll migrate embeddings as they're accessed, not all at once
-                                # This avoids potential issues with large datasets
-                                print("📊 Migration: VECTOR column added. Existing embeddings will be migrated on access.")
-                                print("  → New embeddings will use VECTOR column directly")
-                            except Exception as migrate_error:
-                                print(f"⚠ Migration warning: {migrate_error}")
-                                conn.rollback()
+                        if not alembic_version_exists:
+                            print("⚠ Alembic version tracking not found. Consider running: alembic stamp head")
+                    except Exception:
+                        pass  # Ignore errors in migration check
+                        
         except Exception as table_error:
-            error_str = str(table_error).lower()
-            if "vector" in error_str and ("does not exist" in error_str or "undefinedobject" in error_str):
-                print("⚠ Table creation failed: VECTOR type not available")
-                print("  → The document_chunks table may already exist with a VECTOR column")
-                print("  → Solution: Either install pgvector extension or drop the table manually")
-                print("  → For now, continuing without VECTOR column support")
-                # Remove embedding column attribute to prevent further issues
-                if hasattr(DocumentChunkModel, 'embedding'):
-                    delattr(DocumentChunkModel, 'embedding')
-                PGVECTOR_EXTENSION_AVAILABLE = False
-                print("  → Assuming tables already exist, continuing...")
-            else:
-                raise
+            # Don't fail on table check - migrations will handle schema
+            print(f"⚠ Could not verify database tables: {table_error}")
+            print("  → Tables will be created by migrations if needed")
         
-        print(f"✓ Database initialized successfully")
+        print(f"✓ Database connection initialized (migrations not applied - use 'python migrate.py upgrade')")
         return True
         
     except Exception as e:
@@ -307,6 +299,7 @@ class DatabaseConnectorStorage:
                 connector_type=connector_data['connector_type'],
                 status=connector_data.get('status', 'not_started'),
                 github_url=connector_data.get('github_url'),
+                hevo_github_url=connector_data.get('hevo_github_url'),
                 description=connector_data.get('description', ''),
                 fivetran_urls=connector_data.get('fivetran_urls'),
                 objects_count=connector_data.get('objects_count', 0),
@@ -418,8 +411,19 @@ class DatabaseConnectorStorage:
         finally:
             session.close()
     
-    def save_research_document(self, connector_id: str, content: str) -> bool:
-        """Save or update research document."""
+    def save_research_document(
+        self,
+        connector_id: str,
+        content: str,
+        claims_json: Optional[Dict[str, Any]] = None,
+        canonical_facts_json: Optional[Dict[str, Any]] = None,
+        evidence_map_json: Optional[Dict[str, Any]] = None,
+        citation_report_json: Optional[Dict[str, Any]] = None,
+        citation_overrides_json: Optional[Dict[str, Any]] = None,
+        validation_attempts: Optional[int] = None,
+        assumptions_section: Optional[str] = None
+    ) -> bool:
+        """Save or update research document with claim graph data."""
         session = self.get_session()
         if not session:
             return False
@@ -433,10 +437,31 @@ class DatabaseConnectorStorage:
             if doc:
                 doc.content = content
                 doc.updated_at = datetime.utcnow()
+                if claims_json is not None:
+                    doc.claims_json = claims_json
+                if canonical_facts_json is not None:
+                    doc.canonical_facts_json = canonical_facts_json
+                if evidence_map_json is not None:
+                    doc.evidence_map_json = evidence_map_json
+                if citation_report_json is not None:
+                    doc.citation_report_json = citation_report_json
+                if citation_overrides_json is not None:
+                    doc.citation_overrides_json = citation_overrides_json
+                if validation_attempts is not None:
+                    doc.validation_attempts = validation_attempts
+                if assumptions_section is not None:
+                    doc.assumptions_section = assumptions_section
             else:
                 doc = ResearchDocumentModel(
                     connector_id=connector_id,
-                    content=content
+                    content=content,
+                    claims_json=claims_json,
+                    canonical_facts_json=canonical_facts_json,
+                    evidence_map_json=evidence_map_json,
+                    citation_report_json=citation_report_json,
+                    citation_overrides_json=citation_overrides_json,
+                    validation_attempts=validation_attempts or 0,
+                    assumptions_section=assumptions_section
                 )
                 session.add(doc)
             

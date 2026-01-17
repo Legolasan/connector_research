@@ -8,7 +8,8 @@ Now featuring: DocWhisperer™ - The Oracle that whispers official documentation
 import os
 import re
 import asyncio
-from typing import List, Dict, Any, Optional, Callable
+import hashlib
+from typing import List, Dict, Any, Optional, Callable, Tuple
 from dataclasses import dataclass, field
 from datetime import datetime
 from openai import AsyncOpenAI
@@ -480,7 +481,28 @@ FINAL_SECTIONS = [
         "Provide sample extraction code for the top 5 most important objects."
     ], requires_fivetran=True, requires_code_analysis=True),
     
-    ResearchSection(202, "Production Checklist", 4, "Implementation Guide", [
+    ResearchSection(202, "Fivetran Parity Analysis", 4, "Implementation Guide", [
+        "Document how Fivetran implements the {connector} connector based on Fivetran documentation.",
+        "## Fivetran Implementation Overview",
+        "Document Fivetran's authentication approach for {connector}",
+        "Document Fivetran's extraction methods and API endpoints used",
+        "List all objects/tables that Fivetran supports for {connector}",
+        "Document Fivetran's sync strategies (full load, incremental, CDC)",
+        "Document Fivetran's delete detection approach",
+        "Document Fivetran's rate limiting and error handling strategies",
+        "## Hevo Comparison (if Hevo connector code provided)",
+        "[IF HEVO] Compare Fivetran's approach with Hevo's implementation",
+        "[IF HEVO] Create comparison table: Fivetran vs Hevo (Objects, Auth, Extraction, Sync, Deletes)",
+        "[IF HEVO] Highlight similarities and differences in object support",
+        "[IF HEVO] Compare authentication methods between Fivetran and Hevo",
+        "[IF HEVO] Compare extraction approaches and API endpoints",
+        "[IF HEVO] Compare sync strategies (full load, incremental, CDC)",
+        "[IF HEVO] Compare delete detection methods",
+        "[IF NO HEVO] Note: Hevo comparison not available (no Hevo connector code provided)",
+        "Provide insights on differences in implementation approaches and their trade-offs."
+    ], requires_fivetran=True, requires_code_analysis=False),
+    
+    ResearchSection(203, "Production Checklist", 4, "Implementation Guide", [
         "Create a production readiness checklist for {connector} data extraction.",
         "**Authentication**: [ ] OAuth app registered, [ ] Credentials secured, [ ] Token refresh implemented",
         "**Rate Limiting**: [ ] Rate limiter configured, [ ] Backoff strategy implemented",
@@ -490,6 +512,37 @@ FINAL_SECTIONS = [
         "What are the top 10 things that can go wrong in production?",
         "What monitoring and alerting should be in place?"
     ]),
+    
+    ResearchSection(205, "Engineering Cost Analysis", 4, "Implementation Guide", [
+        """Analyze the engineering cost and implementation complexity for {connector}:
+
+### Extraction Method Complexity Matrix
+| Method | Implementation Effort | Maintenance Burden | Risk Factors | Recommendation |
+|--------|---------------------|-------------------|--------------|----------------|
+| (For each discovered method, assess complexity) |
+
+### Complexity Factors
+- **Undocumented APIs**: Methods that lack official documentation
+- **Frequent Breaking Changes**: APIs that change frequently
+- **Rate Limit Complexity**: Complex rate limiting schemes
+- **Authentication Complexity**: Multi-step or non-standard auth
+- **Data Volume Challenges**: Methods that struggle at scale
+- **Error Handling Complexity**: Unpredictable error patterns
+
+### High-Maintenance Endpoints
+| Endpoint | Reason | Mitigation Strategy |
+|----------|--------|-------------------|
+| (List endpoints that require frequent updates or monitoring) |
+
+### Implementation Recommendations
+- **Recommended Methods**: (methods with low complexity, high reliability)
+- **Conditional Methods**: (methods to use only if customer requires specific features)
+- **Avoid Methods**: (methods with high complexity and low value)
+
+### Engineering Cost Summary
+Provide overall assessment of connector implementation complexity.
+"""
+    ], requires_code_analysis=True),
 ]
 
 
@@ -882,17 +935,35 @@ curl -I https://api.{connector}.com/health
 
 
 @dataclass
+class StopTheLineEvent:
+    """Stop-the-line event when critical issues are detected."""
+    reason: str  # "CRITICAL_CONTRADICTION", "LOW_CONFIDENCE_CRITICAL"
+    section_number: int
+    required_action: str  # "HUMAN_REVIEW", "ADDITIONAL_SOURCES"
+    contradictions: List[Any] = field(default_factory=list)
+    uncertainty_flags: List[Any] = field(default_factory=list)
+
+
+@dataclass
 class ResearchProgress:
     """Tracks research generation progress."""
     connector_id: str
     connector_name: str
     current_section: int = 0
     total_sections: int = 0  # Dynamic - calculated based on discovered methods
-    status: str = "idle"  # idle, running, completed, failed, cancelled
+    status: str = "idle"  # idle, running, completed, failed, cancelled, stopped
     sections_completed: List[int] = field(default_factory=list)
     current_content: str = ""
     error_message: str = ""
     discovered_methods: List[str] = field(default_factory=list)  # Methods found during discovery
+    section_reviews: Dict[int, Any] = field(default_factory=dict)  # Section reviews from Critic Agent
+    stop_the_line_events: List[StopTheLineEvent] = field(default_factory=list)
+    contradictions: List[Any] = field(default_factory=list)
+    engineering_costs: Dict[str, Any] = field(default_factory=dict)
+    overall_confidence: float = 0.0
+    claims_json: List[Dict[str, Any]] = field(default_factory=list)  # Structured claims
+    canonical_facts_json: Dict[str, Any] = field(default_factory=dict)  # Final registry
+    evidence_map_json: Dict[str, Dict[str, Any]] = field(default_factory=dict)  # Citation → evidence (with stable IDs)
 
 
 @dataclass
@@ -962,7 +1033,26 @@ class ResearchAgent:
         # 🔮 Summon the DocWhisperer
         self.doc_whisperer = get_doc_whisperer()
         print("  🔮 DocWhisperer™ initialized!")
-        print("  📚 ResearchAgent ready with multi-source knowledge!")
+        
+        # 🧠 Initialize Critic Agent
+        try:
+            from services.critic_agent import CriticAgent
+            self.critic_agent = CriticAgent()
+            print("  🧠 Critic Agent initialized!")
+        except Exception as e:
+            print(f"  ⚠ Critic Agent not available: {e}")
+            self.critic_agent = None
+        
+        # 🔍 Initialize Contradiction Resolver
+        try:
+            from services.contradiction_resolver import ContradictionResolver
+            self.contradiction_resolver = ContradictionResolver()
+            print("  🔍 Contradiction Resolver initialized!")
+        except Exception as e:
+            print(f"  ⚠ Contradiction Resolver not available: {e}")
+            self.contradiction_resolver = None
+        
+        print("  📚 ResearchAgent ready with multi-source knowledge and multi-agent review!")
     
     def get_progress(self) -> Optional[ResearchProgress]:
         """Get current research progress."""
@@ -1478,11 +1568,23 @@ class ResearchAgent:
                 # Classify source type for confidence scoring
                 url = result.get('url', '')
                 source_type = self._classify_source(url)
+                citation_tag = f"web:{i}"
                 
-                results.append(f"[web:{i}] [{source_type}] {result.get('title', 'No title')}")
+                results.append(f"[{citation_tag}] [{source_type}] {result.get('title', 'No title')}")
                 results.append(f"URL: {url}")
-                results.append(f"Content: {result.get('content', '')[:500]}...")
+                content_snippet = result.get('content', '')[:500]
+                results.append(f"Content: {content_snippet}...")
                 results.append("")
+                
+                # Add to evidence map with stable ID
+                if self._current_progress:
+                    self._add_to_evidence_map(
+                        citation_tag=citation_tag,
+                        url=url,
+                        snippet=content_snippet,
+                        source_type="web",
+                        confidence=0.7 if 'OFFICIAL' in source_type else 0.5
+                    )
             
             return "\n".join(results) if results else "No results found"
             
@@ -1972,6 +2074,7 @@ class ResearchAgent:
         connector_name: str,
         connector_type: str,
         github_context: str = "",
+        hevo_context: Optional[Dict[str, Any]] = None,
         fivetran_context: str = "",
         structured_context: Optional[Dict[str, Any]] = None
     ) -> str:
@@ -1984,6 +2087,7 @@ class ResearchAgent:
             connector_name: Name of connector
             connector_type: Type of connector
             github_context: Context from GitHub code analysis (legacy flat format)
+            hevo_context: Optional Hevo connector context for comparison (only used for Fivetran Parity section)
             fivetran_context: Context from Fivetran comparison
             structured_context: Structured context with implementation, sdk, and documentation
             
@@ -2033,6 +2137,7 @@ class ResearchAgent:
         )
         
         if whisper:
+            citation_tag = "doc:1"
             docwhisperer_context = f"""
 🔮 **DocWhisperer™ Official Documentation Context:**
 Source: {whisper.source}
@@ -2045,6 +2150,16 @@ Confidence: {whisper.confidence}%
 """
             all_context_parts.append(docwhisperer_context)
             print(f"  🔮 DocWhisperer provided wisdom for Section {section.number}: {section.name}")
+            
+            # Add to evidence map with stable ID
+            if self._current_progress:
+                self._add_to_evidence_map(
+                    citation_tag=citation_tag,
+                    url=whisper.source,
+                    snippet=whisper.content[:1000],
+                    source_type="doc",
+                    confidence=whisper.confidence / 100.0 if whisper.confidence else 0.9
+                )
         
         # 🔍 STEP 3: Fall back to web search for additional context
         search_query = f"{connector_name} API {section.name} documentation 2024 2025"
@@ -2054,10 +2169,30 @@ Confidence: {whisper.confidence}%
         if all_context_parts:
             web_results = "\n".join(all_context_parts) + "\n\n**Web Search Results (supplementary):**\n" + web_results
         
+        # Build Hevo context string if provided (for Fivetran Parity section)
+        hevo_context_str = ""
+        if hevo_context:
+            hevo_is_structured = hevo_context.get('structure_type') == 'structured'
+            hevo_context_str = self._build_github_context_string(hevo_context, hevo_is_structured, None)
+        
         # Build the prompt
         # Use string replacement instead of .format() to avoid KeyError with JSON code blocks
         # This safely replaces {connector} without interpreting other { } as format placeholders
-        prompts_text = "\n".join(f"- {p.replace('{connector}', connector_name)}" for p in section.prompts)
+        # Handle conditional prompts [IF HEVO] and [IF NO HEVO]
+        filtered_prompts = []
+        for p in section.prompts:
+            if "[IF HEVO]" in p:
+                if hevo_context:
+                    filtered_prompts.append(p.replace("[IF HEVO]", ""))
+                # Skip if no Hevo context
+            elif "[IF NO HEVO]" in p:
+                if not hevo_context:
+                    filtered_prompts.append(p.replace("[IF NO HEVO]", ""))
+                # Skip if Hevo context exists
+            else:
+                filtered_prompts.append(p)
+        
+        prompts_text = "\n".join(f"- {p.replace('{connector}', connector_name)}" for p in filtered_prompts)
         
         # Special system prompt for Section 19 (Object Catalog)
         if section.number == 19:
@@ -2097,6 +2232,12 @@ CRITICAL OUTPUT FORMAT REQUIREMENTS:
             system_prompt = """You are an expert technical writer specializing in data integration and ETL connector development.
 Your task is to write detailed, production-grade documentation for connector research.
 
+CRITICAL CITATION REQUIREMENTS:
+- Every factual claim (numbers, endpoints, scopes, rate limits, 'supports'/'requires' statements) MUST include inline citations like [web:1], [vault:1], [doc:1]
+- Citations must be within 250 characters of the claim
+- Table rows must include citations at the end of each row
+- Claims without citations will be rejected and require regeneration
+
 Requirements:
 - Write 8-10 detailed sentences per subsection
 - Include exact values from documentation (OAuth scopes, permissions, rate limits)
@@ -2116,7 +2257,7 @@ Requirements:
 
         # Special user prompt for Section 19 (Object Catalog)
         if section.number == 19:
-            user_prompt = f"""Generate Section {section.number}: {section.name} for the {connector_name} connector research document.
+        user_prompt = f"""Generate Section {section.number}: {section.name} for the {connector_name} connector research document.
 
 Connector Type: {connector_type}
 Phase: {section.phase_name}
@@ -2130,8 +2271,10 @@ Web Search Results:
 {web_results}
 
 {f"GitHub Code Analysis Context:{chr(10)}{github_context}" if github_context else ""}
-{f"Fivetran Comparison Context (use for Fivetran Support column):{chr(10)}{fivetran_context}" if fivetran_context else ""}
+{f"⚠️ **Fivetran Context (Reference Only - Not Ground Truth):**{chr(10)}Fivetran's implementation is provided for comparison purposes. Note that:{chr(10)}- Fivetran may use private/undocumented endpoints{chr(10)}- Their implementation may differ from official API documentation{chr(10)}- Use Fivetran as a signal, not authoritative source{chr(10)}- When Fivetran conflicts with official docs, prioritize official docs{chr(10)}- For Fivetran Support column: Use '?' if only Fivetran mentions the object{chr(10)}{chr(10)}{fivetran_context}" if fivetran_context else ""}
 {f"Structured Repository Context:{chr(10)}{section_context}" if section_context else ""}
+{f"Hevo Connector Code Context:{chr(10)}{hevo_context_str}" if hevo_context and hevo_context_str else ""}
+{f"Hevo Connector Code Context (for comparison):{chr(10)}{hevo_context_str}" if hevo_context and hevo_context_str else ""}
 
 OUTPUT FORMAT REQUIRED:
 
@@ -2179,8 +2322,9 @@ Web Search Results (including DocWhisperer™ official docs if available):
 {web_results}
 
 {f"GitHub Code Analysis Context:{chr(10)}{github_context}" if github_context else ""}
-{f"Fivetran Comparison Context:{chr(10)}{fivetran_context}" if fivetran_context else ""}
+{f"⚠️ **Fivetran Context (Reference Only - Not Ground Truth):**{chr(10)}Fivetran's implementation is provided for comparison purposes. Note that:{chr(10)}- Fivetran may use private/undocumented endpoints{chr(10)}- Their implementation may differ from official API documentation{chr(10)}- Use Fivetran as a signal, not authoritative source{chr(10)}- When Fivetran conflicts with official docs, prioritize official docs{chr(10)}{chr(10)}{fivetran_context}" if fivetran_context else ""}
 {f"Structured Repository Context:{chr(10)}{section_context}" if section_context else ""}
+{f"Hevo Connector Code Context (for comparison with Fivetran):{chr(10)}{hevo_context_str}" if hevo_context and hevo_context_str else ""}
 
 Generate comprehensive markdown content for this section. Include:
 1. Clear subsection headers (e.g., {section.number}.1, {section.number}.2)
@@ -2271,6 +2415,300 @@ Generate comprehensive markdown content for this section. Include:
 ---
 """
     
+    async def _check_stop_the_line(
+        self,
+        section_review: Any,
+        section_content: str
+    ) -> Optional[StopTheLineEvent]:
+        """
+        Check if section should trigger stop-the-line.
+        
+        Args:
+            section_review: SectionReview from Critic Agent
+            section_content: Generated section content
+            
+        Returns:
+            StopTheLineEvent if should stop, None otherwise
+        """
+        if not section_review:
+            return None
+        
+        # Check for critical contradictions
+        critical_contradictions = [
+            c for c in section_review.contradictions 
+            if c.severity == "CRITICAL" and c.category in ["AUTH", "RATE_LIMIT", "OBJECT_SUPPORT"]
+        ]
+        
+        if critical_contradictions:
+            return StopTheLineEvent(
+                reason="CRITICAL_CONTRADICTION",
+                contradictions=critical_contradictions,
+                section_number=section_review.section_number,
+                required_action="HUMAN_REVIEW"
+            )
+        
+        # Check for low confidence on critical claims
+        low_confidence_critical = [
+            f for f in section_review.uncertainty_flags
+            if f.confidence < 0.5 and f.category in ["AUTH", "RATE_LIMIT", "OBJECT_SUPPORT"]
+        ]
+        
+        if low_confidence_critical:
+            return StopTheLineEvent(
+                reason="LOW_CONFIDENCE_CRITICAL",
+                uncertainty_flags=low_confidence_critical,
+                section_number=section_review.section_number,
+                required_action="ADDITIONAL_SOURCES"
+            )
+        
+        return None
+    
+    async def _validate_and_regenerate(
+        self,
+        section: ResearchSection,
+        connector_name: str,
+        connector_type: str,
+        github_context: str = "",
+        hevo_context: Optional[Dict[str, Any]] = None,
+        fivetran_context: str = "",
+        structured_context: Optional[Dict[str, Any]] = None,
+        max_attempts: int = 3
+    ) -> Tuple[str, Any, bool]:
+        """
+        Generate section with citation validation and smart regeneration.
+        
+        Returns:
+            Tuple of (final_content, validation_result, should_stop)
+        """
+        from services.citation_validator import CitationValidator
+        
+        validator = CitationValidator(max_citation_distance=250)
+        content = ""
+        validation_result = None
+        
+        for attempt in range(1, max_attempts + 1):
+            # Generate content
+            if attempt == 1:
+                # First attempt: normal generation
+                content = await self._generate_section(
+                    section=section,
+                    connector_name=connector_name,
+                    connector_type=connector_type,
+                    github_context=github_context,
+                    hevo_context=hevo_context,
+                    fivetran_context=fivetran_context,
+                    structured_context=structured_context
+                )
+            else:
+                # Regeneration: include failure report in enhanced prompt
+                content = await self._generate_section_with_failure_report(
+                    section=section,
+                    connector_name=connector_name,
+                    connector_type=connector_type,
+                    github_context=github_context,
+                    hevo_context=hevo_context,
+                    fivetran_context=fivetran_context,
+                    structured_context=structured_context,
+                    failure_report=validation_result.failure_report,
+                    attempt_number=attempt
+                )
+            
+            # Validate citations
+            validation_result = validator.validate_content(content, section.number)
+            
+            if validation_result.is_valid:
+                break  # Success!
+            
+            print(f"  ⚠ Citation validation failed (attempt {attempt}/{max_attempts}): "
+                  f"{len(validation_result.uncited_claims)} uncited claims, "
+                  f"{len(validation_result.uncited_table_rows)} uncited table rows")
+        
+        # After max attempts, if still invalid, trigger stop-the-line
+        should_stop = not validation_result.is_valid if validation_result else False
+        
+        if should_stop:
+            print(f"  🛑 Citation validation failed after {max_attempts} attempts. Triggering stop-the-line.")
+            if self._current_progress:
+                self._current_progress.status = "stopped"
+                self._current_progress.error_message = (
+                    f"Citation validation failed: {len(validation_result.uncited_claims)} uncited claims, "
+                    f"{len(validation_result.uncited_table_rows)} uncited table rows"
+                )
+        
+        return content, validation_result, should_stop
+    
+    async def _generate_and_review_section(
+        self,
+        section: ResearchSection,
+        connector_name: str,
+        connector_type: str,
+        github_context: str = "",
+        hevo_context: Optional[Dict[str, Any]] = None,
+        fivetran_context: str = "",
+        structured_context: Optional[Dict[str, Any]] = None,
+        previous_sections: Optional[List[str]] = None
+    ) -> Dict[str, Any]:
+        """
+        Generate section and review with Citation Validator, Evidence Integrity Validator, and Critic Agent.
+        
+        Returns:
+            Dict with 'content', 'review', 'stop_the_line'
+        """
+        # Generate section with validation and smart regeneration
+        content, validation_result, should_stop = await self._validate_and_regenerate(
+            section=section,
+            connector_name=connector_name,
+            connector_type=connector_type,
+            github_context=github_context,
+            hevo_context=hevo_context,
+            fivetran_context=fivetran_context,
+            structured_context=structured_context,
+            max_attempts=3
+        )
+        
+        if should_stop:
+            return {
+                "content": content,
+                "review": None,
+                "stop_the_line": True
+            }
+        
+        # Validate evidence integrity
+        integrity_result = None
+        if self._current_progress and self._current_progress.evidence_map_json:
+            try:
+                from services.evidence_integrity_validator import EvidenceIntegrityValidator
+                integrity_validator = EvidenceIntegrityValidator(enable_snippet_matching=True)
+                integrity_result = integrity_validator.validate_evidence_integrity(
+                    content=content,
+                    evidence_map=self._current_progress.evidence_map_json
+                )
+                
+                if not integrity_result.is_valid:
+                    print(f"  ⚠ Evidence integrity validation failed: {len(integrity_result.issues)} issues")
+                    # For now, log but don't stop - could be enhanced to trigger regeneration
+            except Exception as e:
+                print(f"  ⚠ Evidence integrity validator not available: {e}")
+        
+        # Review with Critic Agent if available
+        review = None
+        stop_event = None
+        
+        if self.critic_agent:
+            # Build sources dict for review
+            sources = {
+                "vault": "",
+                "docwhisperer": "",
+                "web": "",
+                "fivetran": fivetran_context if fivetran_context else "",
+                "github": github_context if github_context else ""
+            }
+            
+            try:
+                review = await self.critic_agent.review_section(
+                    section_number=section.number,
+                    section_name=section.name,
+                    content=content,
+                    sources=sources,
+                    previous_sections=previous_sections or []
+                )
+                
+                # Check for stop-the-line
+                stop_event = await self._check_stop_the_line(review, content)
+                
+                # Store review in progress
+                if self._current_progress:
+                    self._current_progress.section_reviews[section.number] = review
+                    if stop_event:
+                        self._current_progress.stop_the_line_events.append(stop_event)
+                        self._current_progress.contradictions.extend(review.contradictions)
+                        self._current_progress.status = "stopped"
+                
+            except Exception as e:
+                print(f"  ⚠ Critic Agent review failed: {e}")
+        
+        return {
+            "content": content,
+            "review": review,
+            "stop_the_line": stop_event
+        }
+    
+    async def _process_section_with_review(
+        self,
+        section: ResearchSection,
+        connector_name: str,
+        connector_type: str,
+        github_context: str = "",
+        hevo_context: Optional[Dict[str, Any]] = None,
+        fivetran_context: str = "",
+        structured_context: Optional[Dict[str, Any]] = None,
+        document_parts: List[str] = None,
+        on_progress: Optional[Callable] = None
+    ) -> Tuple[str, bool]:
+        """
+        Helper to generate, review, and process a section.
+        
+        Returns:
+            Tuple of (section_content, should_stop)
+        """
+        result = await self._generate_and_review_section(
+            section=section,
+            connector_name=connector_name,
+            connector_type=connector_type,
+            github_context=github_context,
+            hevo_context=hevo_context,
+            fivetran_context=fivetran_context,
+            structured_context=structured_context,
+            previous_sections=(document_parts[-3:] if document_parts else [])
+        )
+        
+        section_content = result["content"]
+        review = result.get("review")
+        stop_event = result.get("stop_the_line")
+        
+        # Extract structured claims after validation passes
+        if not stop_event and self._current_progress:
+            try:
+                sources = {
+                    "vault": "",
+                    "docwhisperer": "",
+                    "web": "",
+                    "fivetran": fivetran_context if fivetran_context else "",
+                    "github": github_context if github_context else ""
+                }
+                
+                claims = self._extract_structured_claims(
+                    content=section_content,
+                    section_number=section.number,
+                    sources=sources,
+                    evidence_map=self._current_progress.evidence_map_json
+                )
+                
+                self._current_progress.claims_json.extend(claims)
+            except Exception as e:
+                print(f"  ⚠ Claim extraction failed: {e}")
+        
+        # Check for stop-the-line
+        if stop_event:
+            print(f"  🛑 STOP-THE-LINE triggered for Section {section.number}: {stop_event.reason}")
+            self._current_progress.status = "stopped"
+            self._current_progress.error_message = f"Stop-the-line: {stop_event.reason} - {stop_event.required_action}"
+            if on_progress:
+                on_progress(self._current_progress)
+            section_content += f"\n\n⚠️ **STOP-THE-LINE**: {stop_event.reason} - {stop_event.required_action}\n"
+            return section_content, True
+        
+        # Update overall confidence
+        if review and review.confidence_score:
+            completed_count = len(self._current_progress.sections_completed)
+            current_avg = self._current_progress.overall_confidence
+            self._current_progress.overall_confidence = (
+                (current_avg * (completed_count - 1) + review.confidence_score) / completed_count
+                if completed_count > 0 else review.confidence_score
+            )
+        
+        return section_content, False
+    
     def _parse_discovered_methods(self, discovery_content: str) -> List[str]:
         """Parse the discovery section content to extract available methods.
         
@@ -2319,6 +2757,7 @@ Generate comprehensive markdown content for this section. Include:
         connector_name: str,
         connector_type: str = "auto",
         github_context: Optional[Dict[str, Any]] = None,
+        hevo_context: Optional[Dict[str, Any]] = None,
         fivetran_context: Optional[Dict[str, Any]] = None,
         on_progress: Optional[Callable[[ResearchProgress], None]] = None
     ) -> str:
@@ -2329,6 +2768,7 @@ Generate comprehensive markdown content for this section. Include:
             connector_name: Connector display name
             connector_type: Type of connector (default "auto" for discovery)
             github_context: Optional extracted code patterns from GitHub
+            hevo_context: Optional Hevo connector context for comparison (used in Fivetran Parity section)
             fivetran_context: Optional Fivetran documentation context for parity comparison
             on_progress: Optional callback for progress updates
             
@@ -2366,6 +2806,12 @@ Generate comprehensive markdown content for this section. Include:
         # Prepare GitHub context string
         github_context_str = self._build_github_context_string(github_context, is_structured, structured_context)
         
+        # Prepare Hevo context string (if Hevo context provided)
+        hevo_context_str = ""
+        if hevo_context:
+            hevo_is_structured = hevo_context.get('structure_type') == 'structured'
+            hevo_context_str = self._build_github_context_string(hevo_context, hevo_is_structured, None)
+        
         # Initialize document with header (section count will be updated later)
         document_parts = []
         discovered_methods = []
@@ -2387,15 +2833,33 @@ Generate comprehensive markdown content for this section. Include:
             if on_progress:
                 on_progress(self._current_progress)
             
-            # Generate section
-            section_content = await self._generate_section(
+            # Generate and review section with Critic Agent
+            result = await self._generate_and_review_section(
                 section=section,
                 connector_name=connector_name,
                 connector_type=connector_type,
                 github_context=github_context_str if section.requires_code_analysis else "",
+                hevo_context=None,
                 fivetran_context="",
-                structured_context=structured_context
+                structured_context=structured_context,
+                previous_sections=[p for p in document_parts[-3:]]  # Last 3 sections for context
             )
+            
+            section_content = result["content"]
+            review = result.get("review")
+            stop_event = result.get("stop_the_line")
+            
+            # Check for stop-the-line
+            if stop_event:
+                print(f"  🛑 STOP-THE-LINE triggered for Section {section.number}: {stop_event.reason}")
+                self._current_progress.status = "stopped"
+                self._current_progress.error_message = f"Stop-the-line: {stop_event.reason} - {stop_event.required_action}"
+                if on_progress:
+                    on_progress(self._current_progress)
+                # Add stop notice to document
+                section_content += f"\n\n⚠️ **STOP-THE-LINE**: {stop_event.reason} - {stop_event.required_action}\n"
+                document_parts.append(section_content)
+                break  # Stop generation
             
             # Save discovery section content for parsing
             if section.number == 2:
@@ -2403,6 +2867,16 @@ Generate comprehensive markdown content for this section. Include:
             
             document_parts.append(section_content)
             self._current_progress.sections_completed.append(section.number)
+            
+            # Update overall confidence
+            if review and review.confidence_score:
+                # Update running average of confidence
+                completed_count = len(self._current_progress.sections_completed)
+                current_avg = self._current_progress.overall_confidence
+                self._current_progress.overall_confidence = (
+                    (current_avg * (completed_count - 1) + review.confidence_score) / completed_count
+                )
+            
             await asyncio.sleep(1)
         
         # Parse discovered methods from Section 2
@@ -2435,17 +2909,44 @@ Generate comprehensive markdown content for this section. Include:
             if on_progress:
                 on_progress(self._current_progress)
             
-            section_content = await self._generate_section(
+            # Generate and review section with Critic Agent
+            result = await self._generate_and_review_section(
                 section=method_section,
                 connector_name=connector_name,
                 connector_type=connector_type,
                 github_context=github_context_str,
+                hevo_context=None,
                 fivetran_context="",
-                structured_context=structured_context
+                structured_context=structured_context,
+                previous_sections=[p for p in document_parts[-3:]]
             )
+            
+            section_content = result["content"]
+            review = result.get("review")
+            stop_event = result.get("stop_the_line")
+            
+            # Check for stop-the-line
+            if stop_event:
+                print(f"  🛑 STOP-THE-LINE triggered for Section {method_section_number}: {stop_event.reason}")
+                self._current_progress.status = "stopped"
+                self._current_progress.error_message = f"Stop-the-line: {stop_event.reason} - {stop_event.required_action}"
+                if on_progress:
+                    on_progress(self._current_progress)
+                section_content += f"\n\n⚠️ **STOP-THE-LINE**: {stop_event.reason} - {stop_event.required_action}\n"
+                document_parts.append(section_content)
+                break
             
             document_parts.append(section_content)
             self._current_progress.sections_completed.append(method_section_number)
+            
+            # Update overall confidence
+            if review and review.confidence_score:
+                completed_count = len(self._current_progress.sections_completed)
+                current_avg = self._current_progress.overall_confidence
+                self._current_progress.overall_confidence = (
+                    (current_avg * (completed_count - 1) + review.confidence_score) / completed_count
+                )
+            
             method_section_number += 1
             await asyncio.sleep(1)
         
@@ -2484,14 +2985,22 @@ Generate comprehensive markdown content for this section. Include:
             if fivetran_context and section.requires_fivetran:
                 section_fivetran_context = self._build_fivetran_section_context(section.number, fivetran_context)
             
-            section_content = await self._generate_section(
+            # Generate and review section
+            section_content, should_stop = await self._process_section_with_review(
                 section=section_copy,
                 connector_name=connector_name,
                 connector_type=connector_type,
                 github_context=github_context_str + "\n\n" + methods_context if section.requires_code_analysis else methods_context,
+                hevo_context=None,
                 fivetran_context=section_fivetran_context,
-                structured_context=structured_context
+                structured_context=structured_context,
+                document_parts=document_parts,
+                on_progress=on_progress
             )
+            
+            if should_stop:
+                document_parts.append(section_content)
+                break
             
             document_parts.append(section_content)
             self._current_progress.sections_completed.append(actual_section_number)
@@ -2530,14 +3039,26 @@ Generate comprehensive markdown content for this section. Include:
             if fivetran_context and section.requires_fivetran:
                 section_fivetran_context = self._build_fivetran_section_context(section.number, fivetran_context)
             
-            section_content = await self._generate_section(
+            # Pass Hevo context only for Fivetran Parity section
+            # Check by section name since section.number is dynamically assigned
+            section_hevo_context = hevo_context if "Fivetran Parity" in section.name else None
+            
+            # Generate and review section
+            section_content, should_stop = await self._process_section_with_review(
                 section=section_copy,
                 connector_name=connector_name,
                 connector_type=connector_type,
                 github_context=github_context_str + "\n\n" + methods_context if section.requires_code_analysis else methods_context,
+                hevo_context=section_hevo_context,
                 fivetran_context=section_fivetran_context,
-                structured_context=structured_context
+                structured_context=structured_context,
+                document_parts=document_parts,
+                on_progress=on_progress
             )
+            
+            if should_stop:
+                document_parts.append(section_content)
+                break
             
             document_parts.append(section_content)
             self._current_progress.sections_completed.append(actual_section_number)
@@ -2571,14 +3092,22 @@ Generate comprehensive markdown content for this section. Include:
             if on_progress:
                 on_progress(self._current_progress)
             
-            section_content = await self._generate_section(
+            # Generate and review section
+            section_content, should_stop = await self._process_section_with_review(
                 section=section_copy,
                 connector_name=connector_name,
                 connector_type=connector_type,
                 github_context=github_context_str + "\n\n" + methods_context,
+                hevo_context=None,
                 fivetran_context="",
-                structured_context=structured_context
+                structured_context=structured_context,
+                document_parts=document_parts,
+                on_progress=on_progress
             )
+            
+            if should_stop:
+                document_parts.append(section_content)
+                break
             
             document_parts.append(section_content)
             self._current_progress.sections_completed.append(actual_section_number)
@@ -2612,14 +3141,22 @@ Generate comprehensive markdown content for this section. Include:
             if on_progress:
                 on_progress(self._current_progress)
             
-            section_content = await self._generate_section(
+            # Generate and review section
+            section_content, should_stop = await self._process_section_with_review(
                 section=section_copy,
                 connector_name=connector_name,
                 connector_type=connector_type,
                 github_context=github_context_str + "\n\n" + methods_context,
+                hevo_context=None,
                 fivetran_context="",
-                structured_context=structured_context
+                structured_context=structured_context,
+                document_parts=document_parts,
+                on_progress=on_progress
             )
+            
+            if should_stop:
+                document_parts.append(section_content)
+                break
             
             document_parts.append(section_content)
             self._current_progress.sections_completed.append(actual_section_number)
@@ -2628,6 +3165,38 @@ Generate comprehensive markdown content for this section. Include:
         # ========================================
         # Build Final Document
         # ========================================
+        
+        # Check if stopped
+        if self._current_progress.status == "stopped":
+            if on_progress:
+                on_progress(self._current_progress)
+            # Return partial document with stop notice
+            partial_doc = "\n".join(document_parts)
+            stop_events_text = "\n".join([
+                f"- Section {event.section_number}: {event.reason} - {event.required_action}"
+                for event in self._current_progress.stop_the_line_events
+            ]) if self._current_progress.stop_the_line_events else "No details available"
+            
+            return f"""# 📚 Connector Research: {connector_name}
+
+**Status:** ⚠️ STOPPED - Critical Issues Detected
+**Reason:** {self._current_progress.error_message}
+
+---
+
+{partial_doc}
+
+---
+
+## ⚠️ Research Generation Stopped
+
+Research generation was stopped due to critical contradictions or low confidence in critical claims.
+
+**Stop-the-Line Events:**
+{stop_events_text}
+
+Please review the issues above and resolve them before continuing.
+"""
         
         # Create document header with accurate section count
         docwhisperer_stats = self.doc_whisperer.get_whisper_stats()

@@ -21,6 +21,7 @@ class ConnectorStatus(str, Enum):
     COMPLETE = "complete"
     FAILED = "failed"
     CANCELLED = "cancelled"
+    STOPPED = "stopped"  # Stop-the-line triggered
 
 
 class ConnectorType(str, Enum):
@@ -49,6 +50,11 @@ class ConnectorProgress:
     current_section_name: str = ""
     research_method: Dict[int, str] = field(default_factory=dict)  # section -> method used
     discovered_methods: List[str] = field(default_factory=list)  # Extraction methods found
+    section_reviews: Dict[int, Any] = field(default_factory=dict)  # Section reviews from Critic Agent
+    stop_the_line_events: List[Any] = field(default_factory=list)  # Stop-the-line events
+    contradictions: List[Any] = field(default_factory=list)  # Detected contradictions
+    engineering_costs: Dict[str, Any] = field(default_factory=dict)  # Engineering cost analysis
+    overall_confidence: float = 0.0  # Overall confidence score
     
     @property
     def percentage(self) -> float:
@@ -126,6 +132,7 @@ class Connector:
     connector_type: str = "auto"  # Auto-discovered during research
     status: str = ConnectorStatus.NOT_STARTED.value
     github_url: Optional[str] = None
+    hevo_github_url: Optional[str] = None  # Optional Hevo connector GitHub URL for comparison
     description: str = ""
     
     # Fivetran parity URLs
@@ -303,6 +310,7 @@ class ConnectorManager:
         name: str,
         connector_type: str,
         github_url: Optional[str] = None,
+        hevo_github_url: Optional[str] = None,
         fivetran_urls: Optional[FivetranUrls] = None,
         description: str = "",
         manual_text: Optional[str] = None,
@@ -337,6 +345,7 @@ class ConnectorManager:
             'connector_type': connector_type,
             'status': ConnectorStatus.NOT_STARTED.value,
             'github_url': github_url,
+            'hevo_github_url': hevo_github_url,
             'description': description,
             'fivetran_urls': fivetran_urls.to_dict() if fivetran_urls else None,
             'manual_input': manual_input.to_dict() if manual_input else None,
@@ -496,7 +505,8 @@ class ConnectorManager:
         completed: bool = False,
         failed: bool = False,
         total_sections: int = 0,
-        discovered_methods: List[str] = None
+        discovered_methods: List[str] = None,
+        research_progress: Optional[Any] = None  # ResearchProgress from ResearchAgent
     ) -> Optional[Connector]:
         """Update research progress for a connector."""
         connector = self.get_connector(connector_id)
@@ -517,6 +527,19 @@ class ConnectorManager:
             progress.discovered_methods = discovered_methods
             # Also update connector's discovered_methods
             connector.discovered_methods = discovered_methods
+        
+        # Update new fields from ResearchProgress if provided
+        if research_progress:
+            if hasattr(research_progress, 'section_reviews'):
+                progress.section_reviews = research_progress.section_reviews
+            if hasattr(research_progress, 'stop_the_line_events'):
+                progress.stop_the_line_events = research_progress.stop_the_line_events
+            if hasattr(research_progress, 'contradictions'):
+                progress.contradictions = research_progress.contradictions
+            if hasattr(research_progress, 'engineering_costs'):
+                progress.engineering_costs = research_progress.engineering_costs
+            if hasattr(research_progress, 'overall_confidence'):
+                progress.overall_confidence = research_progress.overall_confidence
         
         # Calculate phase dynamically based on section number and total
         # Phase 1: Discovery (1-3)

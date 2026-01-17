@@ -119,6 +119,7 @@
                                  'border-l-4 border-l-green-500/50': connector.status === 'complete',
                                  'border-l-4 border-l-yellow-500/50': connector.status === 'researching',
                                  'border-l-4 border-l-blue-500/50': connector.status === 'cloning',
+                                 'border-l-4 border-l-red-500/50': connector.status === 'stopped',
                                  'border-l-4 border-l-gray-500/50': connector.status === 'not_started' || connector.status === 'pending'
                              }">
                             <!-- Header -->
@@ -137,9 +138,10 @@
                                           'bg-green-500/20 text-green-400 border-green-500/30': connector.status === 'complete',
                                           'bg-yellow-500/20 text-yellow-400 border-yellow-500/30': connector.status === 'researching',
                                           'bg-blue-500/20 text-blue-400 border-blue-500/30': connector.status === 'cloning',
+                                          'bg-red-500/20 text-red-400 border-red-500/30': connector.status === 'stopped',
                                           'bg-gray-500/20 text-gray-400 border-gray-500/30': connector.status === 'not_started' || connector.status === 'pending'
                                       }"
-                                      x-text="connector.status === 'researching' ? 'Generating...' : (connector.status || 'pending').replace('_', ' ')">
+                                      x-text="connector.status === 'researching' ? 'Generating...' : connector.status === 'stopped' ? 'Stopped' : (connector.status || 'pending').replace('_', ' ')">
                                 </span>
                             </div>
                             
@@ -168,6 +170,52 @@
                                      class="text-xs text-gray-400 truncate">
                                     <span class="text-yellow-400">●</span>
                                     <span x-text="connector.progress?.current_section_name || 'Initializing...'"></span>
+                                </div>
+                                
+                                <!-- Confidence Score -->
+                                <div x-show="connector.progress?.overall_confidence !== undefined && connector.progress?.overall_confidence > 0" 
+                                     class="flex items-center justify-between text-xs mt-2">
+                                    <span class="text-gray-500">Confidence</span>
+                                    <div class="flex items-center gap-2">
+                                        <div class="w-16 bg-white/10 rounded-full h-1.5">
+                                            <div class="h-1.5 rounded-full transition-all"
+                                                 :class="{
+                                                     'bg-green-500': (connector.progress?.overall_confidence || 0) >= 0.7,
+                                                     'bg-yellow-500': (connector.progress?.overall_confidence || 0) >= 0.5 && (connector.progress?.overall_confidence || 0) < 0.7,
+                                                     'bg-red-500': (connector.progress?.overall_confidence || 0) < 0.5
+                                                 }"
+                                                 :style="{ width: ((connector.progress?.overall_confidence || 0) * 100) + '%' }">
+                                            </div>
+                                        </div>
+                                        <span class="text-white font-medium" 
+                                              :class="{
+                                                  'text-green-400': (connector.progress?.overall_confidence || 0) >= 0.7,
+                                                  'text-yellow-400': (connector.progress?.overall_confidence || 0) >= 0.5 && (connector.progress?.overall_confidence || 0) < 0.7,
+                                                  'text-red-400': (connector.progress?.overall_confidence || 0) < 0.5
+                                              }"
+                                              x-text="Math.round((connector.progress?.overall_confidence || 0) * 100) + '%'">
+                                        </span>
+                                    </div>
+                                </div>
+                                
+                                <!-- Stop-the-Line Alert -->
+                                <div x-show="connector.status === 'stopped' && connector.progress?.stop_the_line_events?.length > 0" 
+                                     class="mt-2 p-2 bg-red-500/20 border border-red-500/30 rounded-lg">
+                                    <div class="flex items-start gap-2">
+                                        <svg class="w-4 h-4 text-red-400 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path>
+                                        </svg>
+                                        <div class="flex-1 min-w-0">
+                                            <div class="text-xs font-medium text-red-400">Stop-the-Line Triggered</div>
+                                            <div class="text-xs text-gray-400 mt-1" 
+                                                 x-text="connector.progress?.stop_the_line_events?.[0]?.reason || 'Critical issue detected'">
+                                            </div>
+                                            <button @click="showStopTheLineModal(connector)" 
+                                                    class="text-xs text-red-400 hover:text-red-300 mt-1 underline">
+                                                View Details
+                                            </button>
+                                        </div>
+                                    </div>
                                 </div>
                                 
                                 <!-- Vectors count -->
@@ -815,6 +863,15 @@
                         <p class="text-xs text-gray-500 mt-2">Provide a GitHub URL to analyze existing SDKs and code patterns</p>
                     </div>
                     
+                    <!-- Hevo Connector GitHub URL (Optional) -->
+                    <div>
+                        <label class="block text-sm font-medium text-gray-300 mb-2">Hevo Connector GitHub URL <span class="text-gray-500">(Optional)</span></label>
+                        <input type="text" x-model="newConnector.hevo_github_url"
+                               placeholder="https://github.com/owner/hevo-connector-repo"
+                               class="w-full px-4 py-3 bg-black/40 border border-white/10 rounded-xl focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none transition-all text-white placeholder-gray-500">
+                        <p class="text-xs text-gray-500 mt-2">Optional: GitHub URL for Hevo connector implementation (for comparison with Fivetran)</p>
+                    </div>
+                    
                     <!-- Fivetran Parity Section (Collapsible) -->
                     <div class="border border-white/10 rounded-xl overflow-hidden">
                         <button type="button" @click="showFivetranInputs = !showFivetranInputs"
@@ -975,6 +1032,342 @@
                         <span x-text="confirmModal.confirmText"></span>
                     </button>
                 </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Stop-the-Line Modal -->
+    <div x-show="showStopTheLineModal" 
+         x-cloak
+         @keydown.escape.window="showStopTheLineModal = false"
+         class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+         @click.self="showStopTheLineModal = false">
+        <div class="bg-gray-900 border border-red-500/30 rounded-2xl shadow-2xl max-w-3xl w-full mx-4 max-h-[90vh] overflow-auto transform transition-all"
+             x-show="showStopTheLineModal"
+             x-transition:enter="transition ease-out duration-200"
+             x-transition:enter-start="opacity-0 scale-95"
+             x-transition:enter-end="opacity-100 scale-100">
+            <div class="p-6">
+                <!-- Header -->
+                <div class="flex items-center justify-between mb-6">
+                    <div class="flex items-center gap-3">
+                        <div class="w-12 h-12 rounded-full bg-red-500/20 flex items-center justify-center">
+                            <svg class="w-6 h-6 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path>
+                            </svg>
+                        </div>
+                        <div>
+                            <h3 class="text-lg font-semibold text-white">Stop-the-Line: Critical Issue Detected</h3>
+                            <p class="text-sm text-gray-400" x-text="stopTheLineConnector?.name || 'Connector'"></p>
+                        </div>
+                    </div>
+                    <button @click="showStopTheLineModal = false" class="w-10 h-10 rounded-xl bg-white/5 hover:bg-white/10 flex items-center justify-center transition-colors">
+                        <svg class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                        </svg>
+                    </button>
+                </div>
+                
+                <!-- Stop Event Details -->
+                <template x-if="stopTheLineConnector?.progress?.stop_the_line_events?.length > 0">
+                    <div class="space-y-4">
+                        <template x-for="(event, idx) in stopTheLineConnector.progress.stop_the_line_events" :key="idx">
+                            <div class="bg-red-500/10 border border-red-500/30 rounded-xl p-4">
+                                <div class="flex items-start justify-between mb-3">
+                                    <div>
+                                        <div class="text-sm font-medium text-red-400 mb-1" x-text="'Reason: ' + (event.reason || 'Unknown')"></div>
+                                        <div class="text-xs text-gray-400" x-text="'Section: ' + (event.section_number || 'N/A')"></div>
+                                    </div>
+                                    <span class="px-2 py-1 text-xs rounded-lg bg-red-500/20 text-red-400 border border-red-500/30"
+                                          x-text="event.required_action || 'HUMAN_REVIEW'">
+                                    </span>
+                                </div>
+                                
+                                <!-- Contradictions -->
+                                <template x-if="event.contradictions && event.contradictions.length > 0">
+                                    <div class="mt-4">
+                                        <div class="text-xs font-semibold text-gray-400 uppercase mb-2">Contradictions</div>
+                                        <div class="space-y-2">
+                                            <template x-for="(contradiction, cIdx) in event.contradictions" :key="cIdx">
+                                                <div class="bg-black/30 rounded-lg p-3 border border-white/5">
+                                                    <div class="text-sm text-white mb-2" x-text="contradiction.claim || 'Unknown claim'"></div>
+                                                    <div class="grid grid-cols-2 gap-2 text-xs">
+                                                        <div>
+                                                            <div class="text-gray-500">Source 1:</div>
+                                                            <div class="text-gray-300" x-text="contradiction.source_1 || 'N/A'"></div>
+                                                            <div class="text-gray-400 mt-1" x-text="'Confidence: ' + Math.round((contradiction.confidence_1 || 0) * 100) + '%'"></div>
+                                                        </div>
+                                                        <div>
+                                                            <div class="text-gray-500">Source 2:</div>
+                                                            <div class="text-gray-300" x-text="contradiction.source_2 || 'N/A'"></div>
+                                                            <div class="text-gray-400 mt-1" x-text="'Confidence: ' + Math.round((contradiction.confidence_2 || 0) * 100) + '%'"></div>
+                                                        </div>
+                                                    </div>
+                                                    <div class="mt-2 text-xs">
+                                                        <span class="px-2 py-1 rounded bg-red-500/20 text-red-400" x-text="'Category: ' + (contradiction.category || 'UNKNOWN')"></span>
+                                                        <span class="px-2 py-1 rounded bg-amber-500/20 text-amber-400 ml-2" x-text="'Severity: ' + (contradiction.severity || 'UNKNOWN')"></span>
+                                                    </div>
+                                                </div>
+                                            </template>
+                                        </div>
+                                    </div>
+                                </template>
+                                
+                                <!-- Uncertainty Flags -->
+                                <template x-if="event.uncertainty_flags && event.uncertainty_flags.length > 0">
+                                    <div class="mt-4">
+                                        <div class="text-xs font-semibold text-gray-400 uppercase mb-2">Low Confidence Claims</div>
+                                        <div class="space-y-2">
+                                            <template x-for="(flag, fIdx) in event.uncertainty_flags" :key="fIdx">
+                                                <div class="bg-black/30 rounded-lg p-3 border border-white/5">
+                                                    <div class="text-sm text-white mb-2" x-text="flag.claim || 'Unknown claim'"></div>
+                                                    <div class="flex items-center justify-between">
+                                                        <div class="text-xs text-gray-400">
+                                                            <span x-text="'Confidence: ' + Math.round((flag.confidence || 0) * 100) + '%'"></span>
+                                                            <span class="ml-2" x-text="'Category: ' + (flag.category || 'GENERAL')"></span>
+                                                        </div>
+                                                        <div class="w-20 bg-white/10 rounded-full h-1.5">
+                                                            <div class="h-1.5 rounded-full bg-red-500"
+                                                                 :style="{ width: ((flag.confidence || 0) * 100) + '%' }">
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </template>
+                                        </div>
+                                    </div>
+                                </template>
+                            </div>
+                        </template>
+                    </div>
+                </template>
+                
+                <!-- Actions -->
+                <div class="flex items-center justify-end gap-3 mt-6 pt-6 border-t border-white/5">
+                    <button @click="showStopTheLineModal = false"
+                            class="px-4 py-2 text-gray-400 hover:text-white transition-colors rounded-xl">
+                        Close
+                    </button>
+                    <button @click="resumeResearch(stopTheLineConnector?.id)"
+                            class="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl font-medium transition-colors">
+                        Resume Research
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Citation Intervention Modal -->
+    <div x-show="showCitationModal" 
+         x-cloak
+         @keydown.escape.window="showCitationModal = false"
+         class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+         @click.self="showCitationModal = false">
+        <div class="bg-gray-900 border border-amber-500/30 rounded-2xl shadow-2xl max-w-4xl w-full mx-4 max-h-[90vh] overflow-auto transform transition-all"
+             x-show="showCitationModal"
+             x-transition:enter="transition ease-out duration-200"
+             x-transition:enter-start="opacity-0 scale-95"
+             x-transition:enter-end="opacity-100 scale-100">
+            <div class="p-6">
+                <!-- Header -->
+                <div class="flex items-center justify-between mb-6">
+                    <div class="flex items-center gap-3">
+                        <div class="w-12 h-12 rounded-full bg-amber-500/20 flex items-center justify-center">
+                            <svg class="w-6 h-6 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+                            </svg>
+                        </div>
+                        <div>
+                            <h3 class="text-lg font-semibold text-white">Citation Validation Required</h3>
+                            <p class="text-sm text-gray-400" x-text="citationConnector?.name || 'Connector'"></p>
+                        </div>
+                    </div>
+                    <button @click="showCitationModal = false" class="w-10 h-10 rounded-xl bg-white/5 hover:bg-white/10 flex items-center justify-center transition-colors">
+                        <svg class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                        </svg>
+                    </button>
+                </div>
+                
+                <!-- Citation Report -->
+                <template x-if="citationReport">
+                    <div class="space-y-4">
+                        <div class="bg-amber-500/10 border border-amber-500/30 rounded-xl p-4">
+                            <div class="text-sm text-amber-400 mb-2">
+                                <span x-text="citationReport.uncited_claims?.length || 0"></span> uncited claims found
+                            </div>
+                            <div class="text-sm text-amber-400">
+                                <span x-text="citationReport.uncited_table_rows?.length || 0"></span> uncited table rows found
+                            </div>
+                        </div>
+                        
+                        <!-- Uncited Claims Table -->
+                        <div class="bg-black/30 rounded-xl border border-white/5 overflow-hidden">
+                            <div class="p-4 border-b border-white/5">
+                                <h4 class="text-sm font-semibold text-white">Uncited Claims</h4>
+                            </div>
+                            <div class="overflow-x-auto">
+                                <table class="w-full">
+                                    <thead class="bg-white/5">
+                                        <tr>
+                                            <th class="px-4 py-2 text-left text-xs font-semibold text-gray-400">Claim</th>
+                                            <th class="px-4 py-2 text-left text-xs font-semibold text-gray-400">Type</th>
+                                            <th class="px-4 py-2 text-left text-xs font-semibold text-gray-400">Action</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <template x-for="(claim, idx) in citationReport.uncited_claims" :key="idx">
+                                            <tr class="border-t border-white/5">
+                                                <td class="px-4 py-3 text-sm text-gray-300" x-text="claim.sentence?.substring(0, 100) + (claim.sentence?.length > 100 ? '...' : '')"></td>
+                                                <td class="px-4 py-3 text-xs text-gray-400" x-text="claim.claim_type"></td>
+                                                <td class="px-4 py-3">
+                                                    <select x-model="claim.action" 
+                                                            class="bg-black/40 border border-white/10 rounded-lg px-3 py-1 text-sm text-gray-300 focus:outline-none focus:border-amber-500/50">
+                                                        <option value="remove">Remove</option>
+                                                        <option value="rewrite_to_unknown">Rewrite to Unknown</option>
+                                                        <option value="attach_citation">Attach Citation</option>
+                                                        <option value="approve_as_assumption">Approve as Assumption</option>
+                                                    </select>
+                                                    <template x-if="claim.action === 'attach_citation'">
+                                                        <div class="mt-2">
+                                                            <select x-model="claim.citation"
+                                                                    class="w-full bg-black/40 border border-white/10 rounded-lg px-3 py-1 text-sm text-gray-300 focus:outline-none focus:border-amber-500/50">
+                                                                <option value="">Select citation...</option>
+                                                                <template x-for="(evidence, tag) in citationEvidenceMap" :key="tag">
+                                                                    <option :value="'[' + tag + ']'" x-text="tag + ': ' + (evidence.snippet?.substring(0, 50) || '')"></option>
+                                                                </template>
+                                                            </select>
+                                                        </div>
+                                                    </template>
+                                                </td>
+                                            </tr>
+                                        </template>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                        
+                        <!-- Actions -->
+                        <div class="flex items-center justify-end gap-3 pt-4 border-t border-white/5">
+                            <button @click="showCitationModal = false"
+                                    class="px-4 py-2 text-gray-400 hover:text-white transition-colors rounded-xl">
+                                Cancel
+                            </button>
+                            <button @click="applyCitationOverrides(citationConnector?.id)"
+                                    class="px-4 py-2 bg-amber-600 hover:bg-amber-500 text-white rounded-xl font-medium transition-colors">
+                                Apply & Resume Research
+                            </button>
+                        </div>
+                    </div>
+                </template>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Citation Intervention Modal -->
+    <div x-show="showCitationModal" 
+         x-cloak
+         @keydown.escape.window="showCitationModal = false"
+         class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+         @click.self="showCitationModal = false">
+        <div class="bg-gray-900 border border-amber-500/30 rounded-2xl shadow-2xl max-w-4xl w-full mx-4 max-h-[90vh] overflow-auto transform transition-all"
+             x-show="showCitationModal"
+             x-transition:enter="transition ease-out duration-200"
+             x-transition:enter-start="opacity-0 scale-95"
+             x-transition:enter-end="opacity-100 scale-100">
+            <div class="p-6">
+                <!-- Header -->
+                <div class="flex items-center justify-between mb-6">
+                    <div class="flex items-center gap-3">
+                        <div class="w-12 h-12 rounded-full bg-amber-500/20 flex items-center justify-center">
+                            <svg class="w-6 h-6 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+                            </svg>
+                        </div>
+                        <div>
+                            <h3 class="text-lg font-semibold text-white">Citation Validation Required</h3>
+                            <p class="text-sm text-gray-400" x-text="citationConnector?.name || 'Connector'"></p>
+                        </div>
+                    </div>
+                    <button @click="showCitationModal = false" class="w-10 h-10 rounded-xl bg-white/5 hover:bg-white/10 flex items-center justify-center transition-colors">
+                        <svg class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                        </svg>
+                    </button>
+                </div>
+                
+                <!-- Citation Report -->
+                <template x-if="citationReport">
+                    <div class="space-y-4">
+                        <div class="bg-amber-500/10 border border-amber-500/30 rounded-xl p-4">
+                            <div class="text-sm text-amber-400 mb-2">
+                                <span x-text="citationReport.uncited_claims?.length || 0"></span> uncited claims found
+                            </div>
+                            <div class="text-sm text-amber-400">
+                                <span x-text="citationReport.uncited_table_rows?.length || 0"></span> uncited table rows found
+                            </div>
+                        </div>
+                        
+                        <!-- Uncited Claims Table -->
+                        <div class="bg-black/30 rounded-xl border border-white/5 overflow-hidden">
+                            <div class="p-4 border-b border-white/5">
+                                <h4 class="text-sm font-semibold text-white">Uncited Claims</h4>
+                            </div>
+                            <div class="overflow-x-auto">
+                                <table class="w-full">
+                                    <thead class="bg-white/5">
+                                        <tr>
+                                            <th class="px-4 py-2 text-left text-xs font-semibold text-gray-400">Claim</th>
+                                            <th class="px-4 py-2 text-left text-xs font-semibold text-gray-400">Type</th>
+                                            <th class="px-4 py-2 text-left text-xs font-semibold text-gray-400">Action</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <template x-for="(claim, idx) in citationReport.uncited_claims" :key="idx">
+                                            <tr class="border-t border-white/5">
+                                                <td class="px-4 py-3 text-sm text-gray-300" x-text="(claim.sentence || '').substring(0, 100) + ((claim.sentence || '').length > 100 ? '...' : '')"></td>
+                                                <td class="px-4 py-3 text-xs text-gray-400" x-text="claim.claim_type || 'UNKNOWN'"></td>
+                                                <td class="px-4 py-3">
+                                                    <select x-model="claim.action" 
+                                                            class="bg-black/40 border border-white/10 rounded-lg px-3 py-1 text-sm text-gray-300 focus:outline-none focus:border-amber-500/50">
+                                                        <option value="">Select action...</option>
+                                                        <option value="remove">Remove</option>
+                                                        <option value="rewrite_to_unknown">Rewrite to Unknown</option>
+                                                        <option value="attach_citation">Attach Citation</option>
+                                                        <option value="approve_as_assumption">Approve as Assumption</option>
+                                                    </select>
+                                                    <template x-if="claim.action === 'attach_citation'">
+                                                        <div class="mt-2">
+                                                            <select x-model="claim.citation"
+                                                                    class="w-full bg-black/40 border border-white/10 rounded-lg px-3 py-1 text-sm text-gray-300 focus:outline-none focus:border-amber-500/50">
+                                                                <option value="">Select citation...</option>
+                                                                <template x-for="(evidence, tag) in citationEvidenceMap" :key="tag">
+                                                                    <option :value="'[' + tag + ']'" x-text="tag + ': ' + ((evidence.snippet || '').substring(0, 50) || '')"></option>
+                                                                </template>
+                                                            </select>
+                                                        </div>
+                                                    </template>
+                                                </td>
+                                            </tr>
+                                        </template>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                        
+                        <!-- Actions -->
+                        <div class="flex items-center justify-end gap-3 pt-4 border-t border-white/5">
+                            <button @click="showCitationModal = false"
+                                    class="px-4 py-2 text-gray-400 hover:text-white transition-colors rounded-xl">
+                                Cancel
+                            </button>
+                            <button @click="applyCitationOverrides(citationConnector?.id)"
+                                    class="px-4 py-2 bg-amber-600 hover:bg-amber-500 text-white rounded-xl font-medium transition-colors">
+                                Apply & Resume Research
+                            </button>
+                        </div>
+                    </div>
+                </template>
             </div>
         </div>
     </div>

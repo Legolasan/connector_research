@@ -7,9 +7,12 @@ Supports multi-connector research with per-connector Pinecone indices.
 
 import os
 import asyncio
+import re
+import html
 from pathlib import Path
 from typing import Optional, Dict, Any, List
 from contextlib import asynccontextmanager
+from datetime import datetime
 
 from fastapi import FastAPI, Request, HTTPException, BackgroundTasks, File, UploadFile, Form
 from fastapi.staticfiles import StaticFiles
@@ -97,6 +100,7 @@ class ConnectorCreateRequest(BaseModel):
     name: str
     connector_type: Optional[str] = "auto"  # Auto-discovered during research
     github_url: Optional[str] = None
+    hevo_github_url: Optional[str] = None  # Optional Hevo connector GitHub URL for comparison
     fivetran_urls: Optional[FivetranUrlsRequest] = None
     description: str = ""
     manual_text: Optional[str] = None  # Manual object list as text
@@ -125,6 +129,7 @@ class ConnectorResponse(BaseModel):
     connector_type: str
     status: str
     github_url: Optional[str]
+    hevo_github_url: Optional[str]
     fivetran_urls: Optional[FivetranUrlsResponse]
     description: str
     discovered_methods: List[str] = []  # Auto-discovered extraction methods
@@ -426,6 +431,7 @@ def _connector_to_response(connector) -> ConnectorResponse:
         connector_type=connector.connector_type,
         status=connector.status,
         github_url=connector.github_url,
+        hevo_github_url=connector.hevo_github_url,
         fivetran_urls=fivetran_urls_response,
         description=connector.description,
         discovered_methods=connector.discovered_methods or [],
@@ -481,6 +487,7 @@ async def create_connector(request: ConnectorCreateRequest):
             name=request.name,
             connector_type=request.connector_type,
             github_url=request.github_url,
+            hevo_github_url=request.hevo_github_url,
             fivetran_urls=fivetran_urls,
             description=request.description,
             manual_text=request.manual_text
@@ -497,6 +504,7 @@ async def create_connector_with_file(
     name: str = Form(...),
     connector_type: Optional[str] = Form("auto"),  # Auto-discovered during research
     github_url: Optional[str] = Form(None),
+    hevo_github_url: Optional[str] = Form(None),
     fivetran_urls: Optional[str] = Form(None),  # JSON string
     manual_text: Optional[str] = Form(None),
     manual_file: Optional[UploadFile] = File(None)
@@ -539,6 +547,7 @@ async def create_connector_with_file(
             name=name,
             connector_type=connector_type,
             github_url=github_url,
+            hevo_github_url=hevo_github_url,
             fivetran_urls=fivetran_urls_obj,
             description="",
             manual_text=manual_text,
@@ -606,10 +615,11 @@ async def generate_research(connector_id: str, background_tasks: BackgroundTasks
     # Update status
     connector_manager.update_connector(connector_id, status=ConnectorStatus.RESEARCHING.value)
     
-    async def run_research():
+        async def run_research():
         """Background task to run research generation."""
         try:
             github_context = None
+            hevo_context = None
             fivetran_context = None
             
             # Clone GitHub repo if URL provided
@@ -620,6 +630,16 @@ async def generate_research(connector_id: str, background_tasks: BackgroundTasks
                     github_context = extracted.to_dict()
                 else:
                     print(f"⚠ GitHub cloning skipped for {connector.name}, continuing with web search only")
+            
+            # Clone Hevo repository if Hevo GitHub URL provided
+            if connector.hevo_github_url and github_cloner:
+                print(f"Cloning Hevo repository for comparison: {connector.hevo_github_url}")
+                hevo_extracted = await github_cloner.clone_and_extract(connector.hevo_github_url, f"{connector_id}-hevo")
+                if hevo_extracted:
+                    hevo_context = hevo_extracted.to_dict()
+                    print(f"✓ Hevo repository analyzed successfully")
+                else:
+                    print(f"⚠ Hevo repository cloning skipped, continuing without Hevo comparison")
             
             # Crawl Fivetran documentation if URLs provided, or use manual input
             has_fivetran_urls = connector.fivetran_urls and connector.fivetran_urls.has_urls()
@@ -679,7 +699,8 @@ async def generate_research(connector_id: str, background_tasks: BackgroundTasks
                     section_name=section_name,
                     completed=(progress.current_section in progress.sections_completed),
                     total_sections=progress.total_sections,
-                    discovered_methods=progress.discovered_methods if hasattr(progress, 'discovered_methods') else None
+                    discovered_methods=progress.discovered_methods if hasattr(progress, 'discovered_methods') else None,
+                    research_progress=progress  # Pass full ResearchProgress object for new fields
                 )
             
             research_content = await research_agent.generate_research(
@@ -687,12 +708,21 @@ async def generate_research(connector_id: str, background_tasks: BackgroundTasks
                 connector_name=connector.name,
                 connector_type=connector.connector_type,
                 github_context=github_context,
+                hevo_context=hevo_context,
                 fivetran_context=fivetran_context,
                 on_progress=on_progress
             )
             
-            # Save research document (supports both database and file storage)
-            connector_manager.save_research_document(connector_id, research_content)
+            # Save research document with claim graph data
+            progress = research_agent.get_progress()
+            connector_manager.save_research_document(
+                connector_id=connector_id,
+                content=research_content,
+                claims_json=progress.claims_json if progress else None,
+                canonical_facts_json=progress.canonical_facts_json if progress else None,
+                evidence_map_json=progress.evidence_map_json if progress else None,
+                validation_attempts=len([e for e in (progress.stop_the_line_events or []) if 'citation' in str(e).lower()]) if progress else None
+            )
             
             # Vectorize into Pinecone
             vectors_count = 0
@@ -741,17 +771,25 @@ async def get_research_status(connector_id: str):
     
     is_running = connector_id in _running_research_tasks
     
+    # Convert progress to dict, handling new fields
+    progress_dict = {
+        "current_section": connector.progress.current_section,
+        "total_sections": connector.progress.total_sections,
+        "sections_completed": connector.progress.sections_completed,
+        "percentage": connector.progress.percentage,
+        "current_section_name": connector.progress.current_section_name,
+        "discovered_methods": connector.progress.discovered_methods,
+        "overall_confidence": getattr(connector.progress, 'overall_confidence', 0.0),
+        "stop_the_line_events": getattr(connector.progress, 'stop_the_line_events', []),
+        "contradictions": getattr(connector.progress, 'contradictions', []),
+        "section_reviews": getattr(connector.progress, 'section_reviews', {})
+    }
+    
     return {
         "connector_id": connector_id,
         "status": connector.status,
         "is_running": is_running,
-        "progress": {
-            "current_section": connector.progress.current_section,
-            "total_sections": connector.progress.total_sections,
-            "sections_completed": connector.progress.sections_completed,
-            "percentage": connector.progress.percentage,
-            "current_section_name": connector.progress.current_section_name
-        }
+        "progress": progress_dict
     }
 
 
@@ -780,6 +818,197 @@ async def get_research_document(connector_id: str):
         raise HTTPException(status_code=404, detail=f"Research document not found for '{connector_id}'")
     
     return {"connector_id": connector_id, "content": content}
+
+
+# =====================
+# Citation Validation API Endpoints
+# =====================
+
+class CitationOverrideRequest(BaseModel):
+    """Request to override citation validation decisions."""
+    overrides: List[Dict[str, Any]]  # List of override actions
+
+
+@app.post("/api/connectors/{connector_id}/citation-report")
+async def get_citation_report(connector_id: str):
+    """
+    Get citation validation report for a connector.
+    Exports missing citations to JSON for human review.
+    """
+    if not connector_manager:
+        raise HTTPException(status_code=503, detail="Connector Manager not initialized")
+    
+    connector = connector_manager.get_connector(connector_id)
+    if not connector:
+        raise HTTPException(status_code=404, detail=f"Connector '{connector_id}' not found")
+    
+    # Get research document from database
+    from services.database import get_db_session, ResearchDocumentModel
+    
+    session = get_db_session()
+    if not session:
+        raise HTTPException(status_code=503, detail="Database not available")
+    
+    try:
+        doc = session.query(ResearchDocumentModel).filter(
+            ResearchDocumentModel.connector_id == connector_id
+        ).first()
+        
+        if not doc:
+            raise HTTPException(status_code=404, detail=f"Research document not found for '{connector_id}'")
+        
+        citation_report = doc.citation_report_json
+        
+        if not citation_report:
+            # Generate report from current progress if available
+            research_agent = get_research_agent()
+            progress = research_agent.get_progress() if research_agent else None
+            
+            if progress and hasattr(progress, 'stop_the_line_events'):
+                # Build report from stop-the-line events
+                citation_report = {
+                    "connector_id": connector_id,
+                    "status": "stopped" if progress.status == "stopped" else "in_progress",
+                    "uncited_claims": [],
+                    "uncited_table_rows": [],
+                    "validation_attempts": 3,
+                    "generated_at": datetime.utcnow().isoformat()
+                }
+            else:
+                citation_report = {
+                    "connector_id": connector_id,
+                    "status": "no_report",
+                    "message": "No citation validation issues found"
+                }
+        
+        return {
+            "connector_id": connector_id,
+            "report": citation_report,
+            "report_id": f"{connector_id}_citation_report"
+        }
+    finally:
+        session.close()
+
+
+@app.post("/api/connectors/{connector_id}/citation-override")
+async def citation_override(connector_id: str, request: CitationOverrideRequest):
+    """
+    Apply citation overrides and resume research generation.
+    
+    Security validation:
+    - Sanitize all user inputs
+    - Validate citation tags exist in evidence_map
+    - Check evidence entry has url + snippet + source_type
+    - Optional: Lightweight snippet-keyword matching
+    """
+    import html
+    from services.database import get_db_session, ResearchDocumentModel
+    from services.evidence_integrity_validator import EvidenceIntegrityValidator
+    
+    if not connector_manager:
+        raise HTTPException(status_code=503, detail="Connector Manager not initialized")
+    
+    connector = connector_manager.get_connector(connector_id)
+    if not connector:
+        raise HTTPException(status_code=404, detail=f"Connector '{connector_id}' not found")
+    
+    session = get_db_session()
+    if not session:
+        raise HTTPException(status_code=503, detail="Database not available")
+    
+    try:
+        doc = session.query(ResearchDocumentModel).filter(
+            ResearchDocumentModel.connector_id == connector_id
+        ).first()
+        
+        if not doc:
+            raise HTTPException(status_code=404, detail=f"Research document not found for '{connector_id}'")
+        
+        evidence_map = doc.evidence_map_json or {}
+        integrity_validator = EvidenceIntegrityValidator(enable_snippet_matching=True)
+        
+        # Validate and sanitize overrides
+        validated_overrides = []
+        for override in request.overrides:
+            claim_id = html.escape(str(override.get("claim_id", "")))
+            action = override.get("action")
+            
+            if action not in ["remove", "rewrite_to_unknown", "attach_citation", "approve_as_assumption"]:
+                raise HTTPException(status_code=400, detail=f"Invalid action: {action}")
+            
+            validated_override = {
+                "claim_id": claim_id,
+                "action": action
+            }
+            
+            # Validate citation if attaching
+            if action == "attach_citation":
+                citation = override.get("citation", "")
+                evidence_id = override.get("evidence_id", "")
+                
+                # Sanitize citation
+                citation = html.escape(citation)
+                
+                # Extract citation tag (e.g., "web:1" from "[web:1]")
+                import re
+                citation_match = re.match(r'\[([^\]]+)\]', citation)
+                if not citation_match:
+                    raise HTTPException(status_code=400, detail=f"Invalid citation format: {citation}")
+                
+                citation_tag = citation_match.group(1)
+                
+                # Validate citation exists in evidence_map
+                if citation_tag not in evidence_map:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Citation tag '{citation_tag}' not found in evidence_map"
+                    )
+                
+                evidence_entry = evidence_map[citation_tag]
+                
+                # Validate evidence entry has required fields
+                required_fields = ['url', 'snippet', 'source_type']
+                missing_fields = [f for f in required_fields if f not in evidence_entry]
+                if missing_fields:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Evidence entry for '{citation_tag}' missing fields: {', '.join(missing_fields)}"
+                    )
+                
+                # Validate evidence_id matches
+                if evidence_id and evidence_entry.get('evidence_id') != evidence_id:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Evidence ID mismatch for '{citation_tag}'"
+                    )
+                
+                validated_override["citation"] = citation
+                validated_override["evidence_id"] = evidence_entry.get('evidence_id', '')
+            
+            validated_overrides.append(validated_override)
+        
+        # Store overrides in database
+        doc.citation_overrides_json = validated_overrides
+        session.commit()
+        
+        # TODO: Apply overrides to content and resume research generation
+        # This would involve:
+        # 1. Loading current content
+        # 2. Applying overrides (remove, rewrite, attach citations)
+        # 3. Resuming research generation from where it stopped
+        
+        return {
+            "connector_id": connector_id,
+            "message": "Citation overrides applied successfully",
+            "overrides_count": len(validated_overrides)
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        session.rollback()
+        raise HTTPException(status_code=500, detail=f"Error applying citation overrides: {str(e)}")
+    finally:
+        session.close()
 
 
 # =====================

@@ -162,7 +162,7 @@
                 </div>
             </button>
             
-            <button @click="scrollToSection('object-catalog--replication-guide')" class="bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl p-4 text-left transition-colors">
+            <button @click="scrollToSection('object-catalog-replication-guide')" class="bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl p-4 text-left transition-colors">
                 <div class="flex items-center gap-3">
                     <div class="w-10 h-10 rounded-lg bg-amber-500/20 flex items-center justify-center">
                         <svg class="w-5 h-5 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -739,17 +739,29 @@ function researchViewer() {
         },
         
         addHeadingIds() {
-            setTimeout(() => {
+            // Run immediately and also after a short delay to ensure DOM is ready
+            const addIds = () => {
                 const headings = document.querySelectorAll('.research-content h1, .research-content h2, .research-content h3');
                 headings.forEach(heading => {
-                    const text = heading.textContent;
-                    const id = text.toLowerCase()
-                        .replace(/[^\w\s-]/g, '')
-                        .replace(/[-\s]+/g, '-')
-                        .trim();
-                    heading.id = id;
+                    // Only add ID if it doesn't already have one (markdown might have added it)
+                    if (!heading.id) {
+                        const text = heading.textContent;
+                        const id = text.toLowerCase()
+                            .replace(/[^\w\s-]/g, '')  // Remove special characters
+                            .replace(/[-\s]+/g, '-')    // Replace spaces/dashes with single dash
+                            .replace(/^-+|-+$/g, '')    // Remove leading/trailing dashes
+                            .trim();
+                        heading.id = id;
+                    }
                 });
-            }, 100);
+            };
+            
+            // Try immediately
+            addIds();
+            
+            // Try again after DOM is fully loaded
+            setTimeout(addIds, 100);
+            setTimeout(addIds, 500);
         },
         
         selectMethod(method) {
@@ -763,12 +775,74 @@ function researchViewer() {
         
         scrollToSection(anchor) {
             this.currentView = 'document';
+            // Wait for view to switch and ensure headings have IDs
             setTimeout(() => {
-                const element = document.getElementById(anchor);
-                if (element) {
-                    element.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                // Ensure heading IDs are added first
+                this.addHeadingIds();
+                
+                // Try to find element by exact anchor ID first
+                let element = document.getElementById(anchor);
+                
+                // If not found, try variations (with/without numbers, different dash patterns)
+                if (!element) {
+                    const variations = [
+                        anchor,
+                        anchor.replace(/\d+[.-]\s*/, ''), // Remove leading number like "19. "
+                        anchor.replace(/--+/g, '-'), // Single dashes
+                        anchor.replace(/[&]/g, '').replace(/\s+/g, '-').toLowerCase(), // Handle & specially
+                        anchor.toLowerCase(),
+                        // Try with common section number prefixes
+                        `19-${anchor}`,
+                        `19-${anchor.replace(/--+/g, '-')}`,
+                    ];
+                    
+                    for (const variant of variations) {
+                        element = document.getElementById(variant);
+                        if (element) {
+                            console.log(`Found section with variant: ${variant}`);
+                            break;
+                        }
+                    }
                 }
-            }, 100);
+                
+                // If still not found, search by heading text content (fuzzy match)
+                if (!element) {
+                    const headings = document.querySelectorAll('.research-content h1, .research-content h2, .research-content h3');
+                    const searchTerms = anchor
+                        .replace(/[-_]/g, ' ')
+                        .replace(/\d+[.-]\s*/, '')
+                        .toLowerCase()
+                        .split('-')
+                        .filter(term => term.length > 2); // Filter out short terms
+                    
+                    for (const heading of headings) {
+                        const headingText = heading.textContent.toLowerCase();
+                        // Check if heading contains all search terms or matches key words
+                        const matches = searchTerms.every(term => headingText.includes(term)) ||
+                                      headingText.includes('object catalog') && headingText.includes('replication');
+                        
+                        if (matches) {
+                            element = heading;
+                            console.log(`Found section by text matching: ${heading.textContent}`);
+                            break;
+                        }
+                    }
+                }
+                
+                if (element) {
+                    // Scroll with offset for fixed header
+                    const yOffset = -80;
+                    const y = element.getBoundingClientRect().top + window.pageYOffset + yOffset;
+                    window.scrollTo({ top: y, behavior: 'smooth' });
+                } else {
+                    console.warn(`Could not find section with anchor: ${anchor}`);
+                    // Fallback: scroll to top of document view
+                    const docView = document.querySelector('.research-content');
+                    if (docView) {
+                        docView.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                    }
+                }
+            }, 300); // Increased timeout to ensure DOM and IDs are ready
         },
         
         getMethodColor(method) {

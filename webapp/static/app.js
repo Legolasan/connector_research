@@ -24,6 +24,7 @@ function dashboard() {
         newConnector: {
             name: '',
             github_url: '',
+            hevo_github_url: '',
             fivetran_urls: {
                 setup_guide_url: '',
                 connector_overview_url: '',
@@ -65,6 +66,16 @@ function dashboard() {
         
         // App-wide Status Messages
         appStatus: null,  // { type: 'success'|'error'|'info', title: '', message: '' }
+        
+        // Stop-the-Line Modal State
+        showStopTheLineModal: false,
+        stopTheLineConnector: null,
+        
+        // Citation Intervention Modal State
+        showCitationModal: false,
+        citationConnector: null,
+        citationReport: null,
+        citationEvidenceMap: {},
 
         // Initialize
         async init() {
@@ -159,6 +170,9 @@ function dashboard() {
                     if (this.newConnector.github_url) {
                         formData.append('github_url', this.newConnector.github_url);
                     }
+                    if (this.newConnector.hevo_github_url) {
+                        formData.append('hevo_github_url', this.newConnector.hevo_github_url);
+                    }
                     if (fivetranUrls) {
                         formData.append('fivetran_urls', JSON.stringify(fivetranUrls));
                     }
@@ -179,6 +193,7 @@ function dashboard() {
                         body: JSON.stringify({
                             name: this.newConnector.name,
                             github_url: this.newConnector.github_url || null,
+                            hevo_github_url: this.newConnector.hevo_github_url || null,
                             fivetran_urls: fivetranUrls,
                             description: this.newConnector.description || '',
                             manual_text: this.newConnector.manual_text || null
@@ -306,6 +321,14 @@ function dashboard() {
                             // Refresh connector data
                             this.connectorsLoaded = false;
                             await this.loadConnectors();
+                        } else if (status.status === 'stopped') {
+                            // Show stop-the-line notification
+                            if (status.progress?.stop_the_line_events?.length > 0) {
+                                this.showStatus('error', 'Research Stopped', 
+                                    `Research stopped due to critical issues. Section ${status.progress.stop_the_line_events[0].section_number}: ${status.progress.stop_the_line_events[0].reason}`, 
+                                    false);
+                            }
+                            // Stop polling
                         }
                     }
                 } catch (error) {
@@ -881,6 +904,115 @@ function dashboard() {
             } catch (error) {
                 console.error('Delete error:', error);
                 this.showStatus('error', 'Delete Error', 'Error: ' + error.message);
+            }
+        },
+        
+        // Stop-the-Line Modal Functions
+        showStopTheLineModal(connector) {
+            this.stopTheLineConnector = connector;
+            this.showStopTheLineModal = true;
+        },
+        
+        async resumeResearch(connectorId) {
+            if (!connectorId) return;
+            
+            try {
+                const response = await fetch(`/api/connectors/${connectorId}/research`, {
+                    method: 'POST'
+                });
+                
+                if (response.ok) {
+                    this.showStopTheLineModal = false;
+                    this.showStatus('info', 'Research Resumed', 'Research generation has been resumed. Review the issues and continue.', true);
+                    await this.loadConnectors();
+                    this.pollResearchProgress(connectorId);
+                } else {
+                    const error = await response.json();
+                    this.showStatus('error', 'Resume Failed', error.detail || 'Failed to resume research');
+                }
+            } catch (error) {
+                console.error('Resume research error:', error);
+                this.showStatus('error', 'Resume Error', 'Failed to resume research: ' + error.message);
+            }
+        },
+        
+        // Citation Intervention Functions
+        async showCitationIntervention(connector) {
+            this.citationConnector = connector;
+            
+            try {
+                const response = await fetch(`/api/connectors/${connector.id}/citation-report`, {
+                    method: 'POST'
+                });
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    this.citationReport = data.report;
+                    
+                    if (connector.progress?.evidence_map_json) {
+                        this.citationEvidenceMap = connector.progress.evidence_map_json;
+                    } else {
+                        this.citationEvidenceMap = {};
+                    }
+                    
+                    this.showCitationModal = true;
+                } else {
+                    const error = await response.json();
+                    this.showStatus('error', 'Report Failed', error.detail || 'Failed to load citation report');
+                }
+            } catch (error) {
+                console.error('Citation report error:', error);
+                this.showStatus('error', 'Report Error', 'Failed to load citation report: ' + error.message);
+            }
+        },
+        
+        async applyCitationOverrides(connectorId) {
+            if (!connectorId || !this.citationReport) return;
+            
+            const overrides = [];
+            
+            if (this.citationReport.uncited_claims) {
+                for (const claim of this.citationReport.uncited_claims) {
+                    if (claim.action && claim.action !== '') {
+                        const override = {
+                            claim_id: claim.sentence || `claim_${overrides.length}`,
+                            action: claim.action
+                        };
+                        
+                        if (claim.action === 'attach_citation' && claim.citation) {
+                            override.citation = claim.citation;
+                            const citationTag = claim.citation.replace(/[\[\]]/g, '');
+                            if (this.citationEvidenceMap[citationTag]) {
+                                override.evidence_id = this.citationEvidenceMap[citationTag].evidence_id;
+                            }
+                        }
+                        
+                        overrides.push(override);
+                    }
+                }
+            }
+            
+            try {
+                const response = await fetch(`/api/connectors/${connectorId}/citation-override`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ overrides })
+                });
+                
+                if (response.ok) {
+                    this.showCitationModal = false;
+                    this.showStatus('success', 'Overrides Applied', 'Citation overrides have been applied. Research will resume.', true);
+                    await this.loadConnectors();
+                    await this.resumeResearch(connectorId);
+                } else {
+                    const error = await response.json();
+                    this.showStatus('error', 'Override Failed', error.detail || 'Failed to apply citation overrides');
+                }
+            } catch (error) {
+                console.error('Citation override error:', error);
+                this.showStatus('error', 'Override Error', 'Failed to apply citation overrides: ' + error.message);
             }
         }
     };
