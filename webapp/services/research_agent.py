@@ -2257,7 +2257,7 @@ Requirements:
 
         # Special user prompt for Section 19 (Object Catalog)
         if section.number == 19:
-        user_prompt = f"""Generate Section {section.number}: {section.name} for the {connector_name} connector research document.
+            user_prompt = f"""Generate Section {section.number}: {section.name} for the {connector_name} connector research document.
 
 Connector Type: {connector_type}
 Phase: {section.phase_name}
