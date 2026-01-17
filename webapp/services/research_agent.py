@@ -381,22 +381,67 @@ BASE_SECTIONS = [
     ]),
     
     ResearchSection(2, "Extraction Methods Discovery", 1, "Platform Discovery", [
-        "**IMPORTANT**: Discover ALL available data extraction methods for {connector}. For each method that EXISTS, provide details. If a method does NOT exist, explicitly state 'Not Available'.",
-        "",
-        "Check for the following methods and report availability:",
-        "",
-        "1. **REST API**: Does {connector} have a REST API? If yes: What is the base URL? Is it documented? What version?",
-        "2. **GraphQL API**: Does {connector} have a GraphQL API? If yes: What is the endpoint? What schemas are available?",
-        "3. **SOAP/XML API**: Does {connector} have a SOAP or XML-based API? If yes: Where is the WSDL?",
-        "4. **Webhooks**: Does {connector} support webhooks for real-time events? If yes: What events are available?",
-        "5. **Bulk/Batch API**: Does {connector} have bulk data export or async batch APIs? If yes: How do they work?",
-        "6. **Official SDK**: Does {connector} provide official SDKs? If yes: What languages (Python, Java, Node.js, etc.)?",
-        "7. **JDBC/ODBC**: Does {connector} support direct database connections via JDBC/ODBC? If yes: What drivers?",
-        "8. **File Export**: Does {connector} support data export to files (CSV, JSON, etc.)? If yes: Manual or API-triggered?",
-        "",
-        "Create a summary table at the end:",
-        "| Method | Available | Base URL/Endpoint | Documentation Link | Best Use Case |",
-        "|--------|-----------|-------------------|-------------------|---------------|"
+        """**CRITICAL**: Thoroughly research and discover ALL available data extraction methods for {connector}. 
+This is essential - missing a method will result in incomplete research.
+
+For EACH method below, research thoroughly and state clearly: "✓ Available" or "✗ Not Available"
+
+## Methods to Investigate:
+
+### 1. REST API
+Research: Does {connector} have a REST API?
+- If YES: State "✓ Available", provide base URL (e.g., https://api.example.com/v1/), API version, documentation link
+- If NO: State "✗ Not Available"
+
+### 2. GraphQL API  
+Research: Does {connector} have a GraphQL API? (Many modern platforms like Shopify, GitHub prioritize GraphQL)
+- If YES: State "✓ Available", provide endpoint URL, mention if it's the primary/recommended API
+- If NO: State "✗ Not Available"
+
+### 3. Webhooks
+Research: Does {connector} support webhooks for real-time event notifications?
+- If YES: State "✓ Available", list key event types supported
+- If NO: State "✗ Not Available"
+
+### 4. Bulk/Batch API
+Research: Does {connector} have bulk data export, async jobs, or batch operations?
+- If YES: State "✓ Available", explain how it works (e.g., Shopify uses GraphQL Bulk Operations)
+- If NO: State "✗ Not Available"
+
+### 5. Official SDK/Client Libraries
+Research: Does {connector} provide official SDKs or client libraries?
+- If YES: State "✓ Available", list languages (Python, Node.js, Ruby, Java, etc.)
+- If NO: State "✗ Not Available"
+
+### 6. SOAP/XML API
+Research: Does {connector} have a SOAP or XML-based API?
+- If YES: State "✓ Available", provide WSDL location
+- If NO: State "✗ Not Available"
+
+### 7. JDBC/ODBC
+Research: Does {connector} support direct database connections?
+- If YES: State "✓ Available", specify driver details
+- If NO: State "✗ Not Available"
+
+### 8. File Export
+Research: Does {connector} support data export to files (CSV, JSON)?
+- If YES: State "✓ Available", specify if manual or API-triggered
+- If NO: State "✗ Not Available"
+
+## REQUIRED: Summary Table
+Create this exact table with Yes or No in the Available column:
+
+| Method | Available | Endpoint/URL | Documentation | Best Use Case |
+|--------|-----------|--------------|---------------|---------------|
+| REST API | Yes/No | | | |
+| GraphQL API | Yes/No | | | |
+| Webhooks | Yes/No | | | |
+| Bulk/Batch API | Yes/No | | | |
+| Official SDK | Yes/No | | | |
+| SOAP/XML API | Yes/No | | | |
+| JDBC/ODBC | Yes/No | | | |
+| File Export | Yes/No | | | |
+"""
     ]),
     
     ResearchSection(3, "Developer Environment", 1, "Platform Discovery", [
@@ -2229,7 +2274,7 @@ CRITICAL OUTPUT FORMAT REQUIREMENTS:
 6. List at least 15-30 objects if available, or all objects if fewer exist
 """
         else:
-            system_prompt = """You are an expert technical writer specializing in data integration and ETL connector development.
+        system_prompt = """You are an expert technical writer specializing in data integration and ETL connector development.
 Your task is to write detailed, production-grade documentation for connector research.
 
 CRITICAL CITATION REQUIREMENTS:
@@ -2257,7 +2302,7 @@ Requirements:
 
         # Special user prompt for Section 19 (Object Catalog)
         if section.number == 19:
-            user_prompt = f"""Generate Section {section.number}: {section.name} for the {connector_name} connector research document.
+        user_prompt = f"""Generate Section {section.number}: {section.name} for the {connector_name} connector research document.
 
 Connector Type: {connector_type}
 Phase: {section.phase_name}
@@ -2972,36 +3017,120 @@ Generate comprehensive markdown content for this section with PROPER CITATIONS.
         Returns:
             List of method names that were found to be available
         """
+        import re
         discovered = []
         content_lower = discovery_content.lower()
         
-        # Check for each method
-        method_indicators = {
-            "REST API": ["rest api", "rest endpoint", "restful", "rest-based", "/api/v"],
-            "GraphQL API": ["graphql", "graph ql", "graphql endpoint", "graphql api"],
-            "SOAP/XML API": ["soap", "wsdl", "xml api", "soap endpoint"],
-            "Webhooks": ["webhook", "web hook", "event subscription", "push notification"],
-            "Bulk/Batch API": ["bulk api", "batch api", "async export", "bulk export", "batch request"],
-            "Official SDK": ["official sdk", "sdk available", "python sdk", "java sdk", "node sdk", "client library"],
-            "JDBC/ODBC": ["jdbc", "odbc", "database driver", "direct database"],
-            "File Export": ["file export", "csv export", "data export", "export to file", "downloadable report"]
+        # Method definitions with indicators and negative markers
+        method_definitions = {
+            "REST API": {
+                "indicators": ["rest api", "rest admin api", "restful api", "/api/", "/admin/api/", "rest endpoint"],
+                "positive": ["available", "yes", "supported", "provides", "offers", "has a rest", "✓", "✅"],
+                "negative": ["not available", "unavailable", "does not have", "no rest api", "deprecated"]
+            },
+            "GraphQL API": {
+                "indicators": ["graphql", "graph ql", "graphql api", "graphql admin", "graphql endpoint", "/graphql"],
+                "positive": ["available", "yes", "supported", "provides", "offers", "primary api", "recommended", "✓", "✅"],
+                "negative": ["not available", "unavailable", "does not have", "no graphql", "not supported"]
+            },
+            "SOAP/XML API": {
+                "indicators": ["soap", "wsdl", "xml api", "soap api", "xml-based"],
+                "positive": ["available", "yes", "supported", "provides", "✓", "✅"],
+                "negative": ["not available", "unavailable", "does not", "no soap", "not supported", "n/a"]
+            },
+            "Webhooks": {
+                "indicators": ["webhook", "webhooks", "event subscription", "event notification", "push notification"],
+                "positive": ["available", "yes", "supported", "provides", "supports webhook", "✓", "✅"],
+                "negative": ["not available", "unavailable", "does not", "no webhook", "not supported"]
+            },
+            "Bulk/Batch API": {
+                "indicators": ["bulk api", "bulk operation", "bulk export", "batch api", "async job", "background job"],
+                "positive": ["available", "yes", "supported", "provides", "✓", "✅"],
+                "negative": ["not available", "unavailable", "does not", "no bulk", "not supported"]
+            },
+            "Official SDK": {
+                "indicators": ["official sdk", "client library", "sdk", "python library", "node.js library", "ruby library"],
+                "positive": ["available", "yes", "provides", "official", "supported", "✓", "✅"],
+                "negative": ["not available", "unavailable", "no official", "not supported", "community only"]
+            },
+            "JDBC/ODBC": {
+                "indicators": ["jdbc", "odbc", "database driver", "direct database", "database connection"],
+                "positive": ["available", "yes", "supported", "✓", "✅"],
+                "negative": ["not available", "unavailable", "not supported", "n/a", "no direct"]
+            },
+            "File Export": {
+                "indicators": ["file export", "csv export", "data export", "export to file", "downloadable"],
+                "positive": ["available", "yes", "supported", "✓", "✅"],
+                "negative": ["not available", "unavailable", "not supported", "n/a"]
+            }
         }
         
-        for method, indicators in method_indicators.items():
-            # Check if the method is mentioned positively (not "not available")
-            for indicator in indicators:
+        # First pass: Look for table rows with explicit Yes/Available markers
+        # Pattern: | Method | Yes/Available/✓ |
+        table_pattern = re.compile(r'\|[^|]*?(rest|graphql|soap|webhook|bulk|sdk|jdbc|odbc|file)[^|]*\|[^|]*(yes|available|✓|✅)[^|]*\|', re.IGNORECASE)
+        for match in table_pattern.finditer(discovery_content):
+            row_text = match.group(0).lower()
+            if "rest" in row_text and "REST API" not in discovered:
+                discovered.append("REST API")
+            if "graphql" in row_text and "GraphQL API" not in discovered:
+                discovered.append("GraphQL API")
+            if "soap" in row_text and "SOAP/XML API" not in discovered:
+                discovered.append("SOAP/XML API")
+            if "webhook" in row_text and "Webhooks" not in discovered:
+                discovered.append("Webhooks")
+            if "bulk" in row_text and "Bulk/Batch API" not in discovered:
+                discovered.append("Bulk/Batch API")
+            if "sdk" in row_text and "Official SDK" not in discovered:
+                discovered.append("Official SDK")
+            if ("jdbc" in row_text or "odbc" in row_text) and "JDBC/ODBC" not in discovered:
+                discovered.append("JDBC/ODBC")
+            if ("file" in row_text or "export" in row_text) and "File Export" not in discovered:
+                discovered.append("File Export")
+        
+        # Second pass: Look for explicit positive mentions in prose
+        for method, definition in method_definitions.items():
+            if method in discovered:
+                continue  # Already found in table
+            
+            for indicator in definition["indicators"]:
                 if indicator in content_lower:
-                    # Check it's not marked as unavailable
                     idx = content_lower.find(indicator)
-                    surrounding = content_lower[max(0, idx-50):idx+100]
-                    if "not available" not in surrounding and "unavailable" not in surrounding and "does not" not in surrounding and "no " + indicator not in surrounding:
-                        if method not in discovered:
+                    # Get surrounding context (200 chars)
+                    start = max(0, idx - 100)
+                    end = min(len(content_lower), idx + 150)
+                    surrounding = content_lower[start:end]
+                    
+                    # Check for negative markers first
+                    has_negative = any(neg in surrounding for neg in definition["negative"])
+                    
+                    if not has_negative:
+                        # Check for positive markers
+                        has_positive = any(pos in surrounding for pos in definition["positive"])
+                        
+                        # Also check for URL patterns (strong positive)
+                        has_url = "http" in surrounding or "endpoint" in surrounding or ".com" in surrounding
+                        
+                        if has_positive or has_url:
                             discovered.append(method)
-                        break
+                            break
+        
+        # Special case: If GraphQL Admin API or graphql.json is mentioned, it's definitely available
+        if "GraphQL API" not in discovered:
+            if "graphql admin api" in content_lower or "graphql.json" in content_lower or "/graphql" in content_lower:
+                discovered.append("GraphQL API")
+        
+        # Special case: Bulk Operations via GraphQL (common pattern)
+        if "Bulk/Batch API" not in discovered:
+            if "bulk operation" in content_lower or "bulkoperationrunquery" in content_lower:
+                discovered.append("Bulk/Batch API")
         
         # If nothing found, default to REST API (most common)
         if not discovered:
             discovered = ["REST API"]
+        
+        # Sort for consistent ordering
+        method_order = ["REST API", "GraphQL API", "Webhooks", "Bulk/Batch API", "Official SDK", "SOAP/XML API", "JDBC/ODBC", "File Export"]
+        discovered = sorted(discovered, key=lambda x: method_order.index(x) if x in method_order else 999)
         
         return discovered
     
