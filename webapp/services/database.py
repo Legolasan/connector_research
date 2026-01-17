@@ -227,6 +227,24 @@ def init_database() -> bool:
                 else:
                     print("✓ Database tables verified")
                     
+                    # Auto-add missing columns (for deployments where migrations haven't run)
+                    try:
+                        # Check if hevo_github_url column exists
+                        hevo_col_exists = conn.execute(text("""
+                            SELECT EXISTS (
+                                SELECT FROM information_schema.columns 
+                                WHERE table_name = 'connectors' AND column_name = 'hevo_github_url'
+                            )
+                        """)).scalar()
+                        
+                        if not hevo_col_exists:
+                            print("⚠ Adding missing column: hevo_github_url")
+                            conn.execute(text("ALTER TABLE connectors ADD COLUMN hevo_github_url VARCHAR(500)"))
+                            conn.commit()
+                            print("✓ Added hevo_github_url column")
+                    except Exception as col_error:
+                        print(f"⚠ Could not add missing column: {col_error}")
+                    
                     # Check migration status (warn if pending, but don't block)
                     try:
                         # Check if alembic_version table exists
