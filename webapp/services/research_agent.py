@@ -2415,6 +2415,252 @@ Generate comprehensive markdown content for this section. Include:
 ---
 """
     
+    async def _generate_section_with_failure_report(
+        self,
+        section: ResearchSection,
+        connector_name: str,
+        connector_type: str,
+        github_context: str = "",
+        hevo_context: Optional[Dict[str, Any]] = None,
+        fivetran_context: str = "",
+        structured_context: Optional[Dict[str, Any]] = None,
+        failure_report: str = "",
+        attempt_number: int = 2
+    ) -> str:
+        """Generate content for a section with failure report context for regeneration.
+        
+        This method is called on regeneration attempts (attempt 2+) when citation
+        validation fails. It includes the failure report in the prompt to guide
+        the LLM to fix specific issues.
+        
+        Args:
+            section: Section definition
+            connector_name: Name of connector
+            connector_type: Type of connector
+            github_context: Context from GitHub code analysis
+            hevo_context: Optional Hevo connector context for comparison
+            fivetran_context: Context from Fivetran comparison
+            structured_context: Structured context with implementation, sdk, and documentation
+            failure_report: Detailed report of citation validation failures
+            attempt_number: Current attempt number (2, 3, etc.)
+            
+        Returns:
+            Generated markdown content with fixes applied
+        """
+        # Reuse knowledge retrieval from _generate_section
+        all_context_parts = []
+        
+        # 📚 Query Knowledge Vault
+        vault_context = ""
+        if self.knowledge_vault and self.knowledge_vault.has_knowledge(connector_name):
+            vault_results = self.knowledge_vault.search(
+                connector_name=connector_name,
+                query=f"{section.name} {section.phase_name}",
+                top_k=3
+            )
+            
+            if vault_results:
+                vault_texts = []
+                for i, result in enumerate(vault_results, 1):
+                    vault_texts.append(f"[vault:{i}] **{result.title}** (confidence: {result.score:.2f})")
+                    vault_texts.append(f"Source Type: {result.source_type}")
+                    vault_texts.append(f"{result.text[:1000]}...")
+                    vault_texts.append("")
+                
+                vault_context = f"""
+📚 **Knowledge Vault Context (Pre-Indexed Official Documentation):**
+*This information was pre-indexed from official sources - HIGHEST CONFIDENCE*
+
+{chr(10).join(vault_texts)}
+
+---
+"""
+                all_context_parts.append(vault_context)
+        
+        # 🔮 Consult DocWhisperer
+        docwhisperer_context = ""
+        whisper = await self.doc_whisperer.get_library_docs(
+            library_id=await self.doc_whisperer.resolve_library_id(connector_name) or "",
+            topic=f"{section.name} {section.phase_name}"
+        )
+        
+        if whisper:
+            docwhisperer_context = f"""
+🔮 **DocWhisperer™ Official Documentation Context:**
+Source: {whisper.source}
+Library: {whisper.library_id}
+Confidence: {whisper.confidence}%
+
+{whisper.content}
+
+---
+"""
+            all_context_parts.append(docwhisperer_context)
+        
+        # 🔍 Web search
+        search_query = f"{connector_name} API {section.name} documentation 2024 2025"
+        web_results = await self._web_search(search_query)
+        
+        if all_context_parts:
+            web_results = "\n".join(all_context_parts) + "\n\n**Web Search Results (supplementary):**\n" + web_results
+        
+        # Build Hevo context string if provided
+        hevo_context_str = ""
+        if hevo_context:
+            hevo_is_structured = hevo_context.get('structure_type') == 'structured'
+            hevo_context_str = self._build_github_context_string(hevo_context, hevo_is_structured, None)
+        
+        # Build prompts
+        filtered_prompts = []
+        for p in section.prompts:
+            if "[IF HEVO]" in p:
+                if hevo_context:
+                    filtered_prompts.append(p.replace("[IF HEVO]", ""))
+            elif "[IF NO HEVO]" in p:
+                if not hevo_context:
+                    filtered_prompts.append(p.replace("[IF NO HEVO]", ""))
+            else:
+                filtered_prompts.append(p)
+        
+        prompts_text = "\n".join(f"- {p.replace('{connector}', connector_name)}" for p in filtered_prompts)
+        
+        # ENHANCED system prompt with failure report context
+        system_prompt = f"""You are an expert technical writer specializing in data integration and ETL connector development.
+Your task is to REGENERATE a section that failed citation validation.
+
+⚠️ REGENERATION ATTEMPT {attempt_number}/3 ⚠️
+
+The previous version of this section was REJECTED because of missing citations.
+
+FAILURE REPORT FROM PREVIOUS ATTEMPT:
+{failure_report}
+
+CRITICAL REQUIREMENTS FOR THIS REGENERATION:
+1. Every factual claim (numbers, endpoints, scopes, rate limits, 'supports'/'requires' statements) MUST include inline citations like [web:1], [vault:1], [doc:1]
+2. Citations must be within 250 characters of the claim they support
+3. Table rows must include citations at the end of each row
+4. If you cannot find a citation for a claim, rewrite it as "N/A - not documented" or "Unknown - requires verification"
+5. DO NOT make up citations - only use citation tags that exist in the provided context
+
+AVAILABLE CITATION TAGS:
+- [web:1], [web:2], [web:3] - from web search results
+- [vault:1], [vault:2], [vault:3] - from Knowledge Vault (highest confidence)
+- [doc:1] - from DocWhisperer official documentation
+
+FIX THE SPECIFIC ISSUES listed in the failure report above. Either:
+a) Add appropriate citations to the claims, OR
+b) Rewrite uncited claims as "Unknown" or "N/A - not documented"
+"""
+
+        # Build section-specific context from structured data
+        section_context = ""
+        if structured_context:
+            section_context = self._build_section_context(section.number, structured_context)
+
+        user_prompt = f"""REGENERATE Section {section.number}: {section.name} for the {connector_name} connector research document.
+
+This is attempt {attempt_number}/3. Previous attempt failed citation validation.
+
+Connector Type: {connector_type}
+Phase: {section.phase_name}
+
+Questions to answer:
+{prompts_text}
+
+Web Search Results (including DocWhisperer™ official docs if available):
+{web_results}
+
+{f"GitHub Code Analysis Context:{chr(10)}{github_context}" if github_context else ""}
+{f"Fivetran Context (Reference Only):{chr(10)}{fivetran_context}" if fivetran_context else ""}
+{f"Structured Repository Context:{chr(10)}{section_context}" if section_context else ""}
+{f"Hevo Connector Code Context:{chr(10)}{hevo_context_str}" if hevo_context and hevo_context_str else ""}
+
+⚠️ REMEMBER: You MUST fix the citation issues from the failure report. Add citations or mark claims as Unknown/N/A.
+
+Generate comprehensive markdown content for this section with PROPER CITATIONS.
+"""
+
+        try:
+            response = await self.client.chat.completions.create(
+                model=self.model,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt}
+                ],
+                temperature=0.3,
+                max_tokens=3000
+            )
+            
+            if not response or not hasattr(response, 'choices') or not response.choices:
+                raise ValueError("OpenAI API returned empty response or no choices")
+            
+            if not response.choices[0] or not hasattr(response.choices[0], 'message'):
+                raise ValueError("OpenAI API response missing message")
+            
+            message = response.choices[0].message
+            if not hasattr(message, 'content') or message.content is None:
+                raise ValueError("OpenAI API response missing content")
+            
+            content = message.content.strip()
+            
+            if not content:
+                raise ValueError("OpenAI API returned empty content")
+            
+            # Phase emoji mapping
+            phase_emojis = {
+                1: "🔍",  # Understand the Platform
+                2: "🔐",  # Data Access Mechanisms
+                3: "🔄",  # Sync Design & Extraction
+                4: "⚡",  # Reliability & Performance
+                5: "🔧",  # Advanced Considerations
+                6: "🛠️",  # Troubleshooting
+                7: "📋",  # Object Catalog
+            }
+            phase_emoji = phase_emojis.get(section.phase, "📄")
+            
+            # Format as markdown section
+            formatted = f"""
+
+---
+
+# {phase_emoji} Phase {section.phase}: {section.phase_name}
+
+## {section.number}. {section.name}
+
+{content}
+
+<details>
+<summary>📌 Section Metadata</summary>
+
+- Generated: {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}
+- Source: Web search + AI synthesis
+- Regeneration: Attempt {attempt_number} (citation validation fix)
+
+</details>
+
+[↑ Back to Summary](#-quick-summary-dashboard)
+
+"""
+            return formatted
+            
+        except Exception as e:
+            import traceback
+            error_trace = traceback.format_exc()
+            print(f"Error regenerating section {section.number} ({section.name}): {e}")
+            print(f"Traceback:\n{error_trace}")
+            return f"""
+
+---
+
+## {section.number}. {section.name}
+
+**Error regenerating section:** {str(e)}
+
+*This section could not be regenerated due to an error. Please try again.*
+
+---
+"""
+    
     async def _check_stop_the_line(
         self,
         section_review: Any,
