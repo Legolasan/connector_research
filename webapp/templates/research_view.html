@@ -378,6 +378,23 @@
         background: transparent;
         padding: 0;
         color: #e5e7eb;
+        font-family: 'JetBrains Mono', 'Fira Code', 'Courier New', monospace;
+        font-size: 0.875rem;
+        line-height: 1.6;
+        white-space: pre;
+        word-wrap: normal;
+        overflow-x: auto;
+        display: block;
+    }
+    
+    /* Language-specific code block styling */
+    .research-content pre code[class*="language-"] {
+        color: #e5e7eb;
+    }
+    
+    .research-content pre code.language-python,
+    .research-content pre code.language-python3 {
+        color: #e5e7eb;
     }
     
     /* Table styling for object tables */
@@ -500,6 +517,23 @@
         color: #e5e7eb;
     }
     
+    .method-content pre code {
+        background: transparent;
+        padding: 0;
+        color: #e5e7eb;
+        font-family: 'JetBrains Mono', 'Fira Code', 'Courier New', monospace;
+        font-size: 0.875rem;
+        line-height: 1.6;
+        white-space: pre;
+        word-wrap: normal;
+        overflow-x: auto;
+        display: block;
+    }
+    
+    .method-content pre code[class*="language-"] {
+        color: #e5e7eb;
+    }
+    
     .method-content p {
         color: #d1d5db;
         line-height: 1.7;
@@ -585,21 +619,58 @@ function researchViewer() {
         },
         
         formatMethodContent(method, content) {
-            // Convert markdown to HTML (basic conversion)
-            let html = content
-                .replace(/### (.*)/g, '<h3>$1</h3>')
-                .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-                .replace(/`([^`]+)`/g, '<code>$1</code>')
-                .replace(/```(\w*)\n([\s\S]*?)```/g, '<pre><code>$2</code></pre>')
-                .replace(/\n\n/g, '</p><p>')
-                .replace(/^\|(.+)\|$/gm, (match) => {
-                    return match;
-                });
+            // Helper function to escape HTML entities
+            const escapeHtml = (text) => {
+                const div = document.createElement('div');
+                div.textContent = text;
+                return div.innerHTML;
+            };
+            
+            // Replace code blocks first with placeholders to avoid processing inline code inside them
+            const codeBlocks = [];
+            let blockIndex = 0;
+            let processedContent = content.replace(/```(\w+)?\n([\s\S]*?)```/g, (match, lang, code) => {
+                const language = lang ? ` class="language-${lang}"` : '';
+                const escapedCode = escapeHtml(code.trim());
+                const placeholder = `__CODE_BLOCK_${blockIndex}__`;
+                codeBlocks.push(`<pre><code${language}>${escapedCode}</code></pre>`);
+                blockIndex++;
+                return placeholder;
+            });
             
             // Convert markdown tables to HTML
-            html = this.convertTablesToHtml(html);
+            processedContent = this.convertTablesToHtml(processedContent);
             
-            return `<h2>${method} Deep Dive</h2><p>${html}</p>`;
+            // Convert other markdown elements
+            processedContent = processedContent
+                .replace(/### (.*)/g, '<h3>$1</h3>')
+                .replace(/## (.*)/g, '<h2>$1</h2>')
+                .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+                // Inline code (backticks)
+                .replace(/`([^`\n]+)`/g, '<code>$1</code>')
+                // Paragraph breaks
+                .replace(/\n\n+/g, '</p><p>')
+                // Numbered lists
+                .replace(/^\d+\.\s+(.+)$/gm, '<li>$1</li>')
+                // Bullet lists
+                .replace(/^[-*]\s+(.+)$/gm, '<li>$1</li>');
+            
+            // Wrap consecutive list items in ul tags
+            processedContent = processedContent.replace(/(<li>.*?<\/li>(?:\s*<li>.*?<\/li>)*)/gs, (match) => {
+                return `<ul>${match}</ul>`;
+            });
+            
+            // Restore code blocks
+            codeBlocks.forEach((block, index) => {
+                processedContent = processedContent.replace(`__CODE_BLOCK_${index}__`, block);
+            });
+            
+            // Wrap in paragraph tags if needed
+            if (!processedContent.trim().startsWith('<')) {
+                processedContent = `<p>${processedContent}</p>`;
+            }
+            
+            return `<h2>${method} Deep Dive</h2>${processedContent}`;
         },
         
         convertTablesToHtml(content) {

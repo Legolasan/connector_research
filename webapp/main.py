@@ -308,9 +308,12 @@ async def view_research_page(request: Request, connector_id: str):
     if not content:
         raise HTTPException(status_code=404, detail=f"Research document not found for '{connector_id}'")
     
-    # Convert markdown to HTML
+    # Convert markdown to HTML with proper code block handling
     md = markdown.Markdown(extensions=['tables', 'fenced_code', 'toc', 'nl2br'])
     html_content = md.convert(content)
+    
+    # Ensure code blocks have proper structure (fenced_code should handle this, but verify)
+    # The fenced_code extension generates: <pre><code class="language-{lang}">code</code></pre>
     
     # Extract table of contents from headings
     toc_items = []
