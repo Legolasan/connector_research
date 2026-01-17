@@ -525,12 +525,26 @@ class DatabaseConnectorStorage:
             return None
         
         try:
-            doc = session.query(ResearchDocumentModel).filter(
-                ResearchDocumentModel.connector_id == connector_id
+            # Use raw SQL to only fetch content column - avoids errors if new columns don't exist yet
+            result = session.execute(
+                text("SELECT content FROM research_documents WHERE connector_id = :connector_id LIMIT 1"),
+                {"connector_id": connector_id}
             ).first()
             
-            if doc:
-                return doc.content
+            if result:
+                return result[0]
+            return None
+        except Exception as e:
+            print(f"Error getting research document: {e}")
+            # Fallback to ORM query if raw SQL fails
+            try:
+                doc = session.query(ResearchDocumentModel).filter(
+                    ResearchDocumentModel.connector_id == connector_id
+                ).first()
+                if doc:
+                    return doc.content
+            except Exception:
+                pass
             return None
         finally:
             session.close()
