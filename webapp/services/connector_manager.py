@@ -635,10 +635,31 @@ class ConnectorManager:
                     return f.read()
             return None
     
-    def save_research_document(self, connector_id: str, content: str) -> bool:
-        """Save research document content."""
+    def save_research_document(
+        self,
+        connector_id: str,
+        content: str,
+        claims_json: Optional[Dict[str, Any]] = None,
+        canonical_facts_json: Optional[Dict[str, Any]] = None,
+        evidence_map_json: Optional[Dict[str, Any]] = None,
+        citation_report_json: Optional[Dict[str, Any]] = None,
+        citation_overrides_json: Optional[Dict[str, Any]] = None,
+        validation_attempts: Optional[int] = None,
+        assumptions_section: Optional[str] = None
+    ) -> bool:
+        """Save research document content with optional claim graph data."""
         if self._use_database:
-            return self._db_storage.save_research_document(connector_id, content)
+            return self._db_storage.save_research_document(
+                connector_id=connector_id,
+                content=content,
+                claims_json=claims_json,
+                canonical_facts_json=canonical_facts_json,
+                evidence_map_json=evidence_map_json,
+                citation_report_json=citation_report_json,
+                citation_overrides_json=citation_overrides_json,
+                validation_attempts=validation_attempts,
+                assumptions_section=assumptions_section
+            )
         else:
             doc_path = self.get_research_document_path(connector_id)
             if not doc_path:
@@ -648,6 +669,7 @@ class ConnectorManager:
                 doc_path.parent.mkdir(parents=True, exist_ok=True)
                 with open(doc_path, 'w') as f:
                     f.write(content)
+                # Note: claim graph data is not saved in file-based mode
                 return True
             except Exception as e:
                 print(f"Error saving research document: {e}")
