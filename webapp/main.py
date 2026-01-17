@@ -278,6 +278,38 @@ app = FastAPI(
     lifespan=lifespan
 )
 
+# =====================
+# Security Configuration
+# =====================
+
+# Rate Limiting
+limiter = Limiter(key_func=get_client_ip)
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+# CORS Configuration
+cors_origins = os.getenv("CORS_ORIGINS", "*").split(",")
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=cors_origins if "*" not in cors_origins else ["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+    expose_headers=["X-API-Key", "X-RateLimit-Limit", "X-RateLimit-Remaining", "X-RateLimit-Reset"]
+)
+
+# Trusted Host Middleware (optional, for production)
+trusted_hosts = os.getenv("TRUSTED_HOSTS")
+if trusted_hosts:
+    app.add_middleware(
+        TrustedHostMiddleware,
+        allowed_hosts=trusted_hosts.split(",")
+    )
+
+# Request Size Limits (configured via middleware)
+MAX_UPLOAD_SIZE = int(os.getenv("MAX_UPLOAD_SIZE_MB", "100")) * 1024 * 1024  # Default 100MB
+MAX_JSON_SIZE = int(os.getenv("MAX_JSON_SIZE_MB", "10")) * 1024 * 1024  # Default 10MB
+
 # Mount static files
 static_path = Path(__file__).parent / "static"
 static_path.mkdir(exist_ok=True)
