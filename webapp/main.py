@@ -14,12 +14,17 @@ from typing import Optional, Dict, Any, List
 from contextlib import asynccontextmanager
 from datetime import datetime
 
-from fastapi import FastAPI, Request, HTTPException, BackgroundTasks, File, UploadFile, Form
+from fastapi import FastAPI, Request, HTTPException, BackgroundTasks, File, UploadFile, Form, Depends
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from fastapi.responses import HTMLResponse
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from pydantic import BaseModel
 from sqlalchemy import text
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
 import json
 
 from services.connector_manager import get_connector_manager, ConnectorManager, ConnectorStatus, FivetranUrls, ManualInput
@@ -28,6 +33,7 @@ from services.research_agent import get_research_agent, ResearchAgent
 from services.vector_manager import get_vector_manager, VectorManager
 from services.fivetran_crawler import get_fivetran_crawler, FivetranCrawler
 from services.knowledge_vault import get_knowledge_vault, KnowledgeVault, KnowledgeSourceType
+from services.security import verify_api_key, InputSanitizer, get_client_ip
 
 
 # =====================
@@ -346,7 +352,12 @@ async def view_research_page(request: Request, connector_id: str):
 
 
 @app.get("/api/connectors/{connector_id}/download")
-async def download_research(connector_id: str):
+@limiter.limit("50/minute")
+async def download_research(
+    request: Request,
+    connector_id: str,
+    api_key: str = Depends(verify_api_key)
+):
     """Download research document as markdown file."""
     from fastapi.responses import Response
     
@@ -468,7 +479,12 @@ async def list_connectors():
 
 
 @app.post("/api/connectors", response_model=ConnectorResponse)
-async def create_connector(request: ConnectorCreateRequest):
+@limiter.limit("20/minute")
+async def create_connector(
+    request: Request,
+    connector_request: ConnectorCreateRequest,
+    api_key: str = Depends(verify_api_key)
+):
     """Create a new connector research project."""
     if not connector_manager:
         raise HTTPException(status_code=503, detail="Connector Manager not initialized")
@@ -500,14 +516,17 @@ async def create_connector(request: ConnectorCreateRequest):
 
 
 @app.post("/api/connectors/upload", response_model=ConnectorResponse)
+@limiter.limit("10/minute")
 async def create_connector_with_file(
+    request: Request,
     name: str = Form(...),
     connector_type: Optional[str] = Form("auto"),  # Auto-discovered during research
     github_url: Optional[str] = Form(None),
     hevo_github_url: Optional[str] = Form(None),
     fivetran_urls: Optional[str] = Form(None),  # JSON string
     manual_text: Optional[str] = Form(None),
-    manual_file: Optional[UploadFile] = File(None)
+    manual_file: Optional[UploadFile] = File(None),
+    api_key: str = Depends(verify_api_key)
 ):
     """Create a new connector research project with optional file upload."""
     if not connector_manager:
@@ -562,7 +581,12 @@ async def create_connector_with_file(
 
 
 @app.get("/api/connectors/{connector_id}", response_model=ConnectorResponse)
-async def get_connector(connector_id: str):
+@limiter.limit("200/minute")
+async def get_connector(
+    request: Request,
+    connector_id: str,
+    api_key: str = Depends(verify_api_key)
+):
     """Get a specific connector by ID."""
     if not connector_manager:
         raise HTTPException(status_code=503, detail="Connector Manager not initialized")
@@ -575,7 +599,12 @@ async def get_connector(connector_id: str):
 
 
 @app.delete("/api/connectors/{connector_id}")
-async def delete_connector(connector_id: str):
+@limiter.limit("20/minute")
+async def delete_connector(
+    request: Request,
+    connector_id: str,
+    api_key: str = Depends(verify_api_key)
+):
     """Delete a connector research project."""
     if not connector_manager:
         raise HTTPException(status_code=503, detail="Connector Manager not initialized")
@@ -597,7 +626,13 @@ async def delete_connector(connector_id: str):
 
 
 @app.post("/api/connectors/{connector_id}/generate")
-async def generate_research(connector_id: str, background_tasks: BackgroundTasks):
+@limiter.limit("5/minute")
+async def generate_research(
+    request: Request,
+    connector_id: str,
+    background_tasks: BackgroundTasks,
+    api_key: str = Depends(verify_api_key)
+):
     """Start research generation for a connector (runs in background)."""
     if not connector_manager:
         raise HTTPException(status_code=503, detail="Connector Manager not initialized")
@@ -760,7 +795,12 @@ async def generate_research(connector_id: str, background_tasks: BackgroundTasks
 
 
 @app.get("/api/connectors/{connector_id}/status")
-async def get_research_status(connector_id: str):
+@limiter.limit("100/minute")
+async def get_research_status(
+    request: Request,
+    connector_id: str,
+    api_key: str = Depends(verify_api_key)
+):
     """Get research generation status for a connector."""
     if not connector_manager:
         raise HTTPException(status_code=503, detail="Connector Manager not initialized")
@@ -794,7 +834,12 @@ async def get_research_status(connector_id: str):
 
 
 @app.post("/api/connectors/{connector_id}/cancel")
-async def cancel_research(connector_id: str):
+@limiter.limit("20/minute")
+async def cancel_research(
+    request: Request,
+    connector_id: str,
+    api_key: str = Depends(verify_api_key)
+):
     """Cancel research generation for a connector."""
     if connector_id not in _running_research_tasks:
         raise HTTPException(status_code=400, detail="No research generation running for this connector")
@@ -808,10 +853,18 @@ async def cancel_research(connector_id: str):
 
 
 @app.get("/api/connectors/{connector_id}/research")
-async def get_research_document(connector_id: str):
+@limiter.limit("100/minute")
+async def get_research_document(
+    request: Request,
+    connector_id: str,
+    api_key: str = Depends(verify_api_key)
+):
     """Get the research document content for a connector."""
     if not connector_manager:
         raise HTTPException(status_code=503, detail="Connector Manager not initialized")
+    
+    # Sanitize connector_id
+    connector_id = InputSanitizer.sanitize_connector_id(connector_id)
     
     content = connector_manager.get_research_document(connector_id)
     if content is None:
@@ -830,7 +883,12 @@ class CitationOverrideRequest(BaseModel):
 
 
 @app.post("/api/connectors/{connector_id}/citation-report")
-async def get_citation_report(connector_id: str):
+@limiter.limit("50/minute")
+async def get_citation_report(
+    request: Request,
+    connector_id: str,
+    api_key: str = Depends(verify_api_key)
+):
     """
     Get citation validation report for a connector.
     Exports missing citations to JSON for human review.
@@ -891,7 +949,13 @@ async def get_citation_report(connector_id: str):
 
 
 @app.post("/api/connectors/{connector_id}/citation-override")
-async def citation_override(connector_id: str, request: CitationOverrideRequest):
+@limiter.limit("20/minute")
+async def citation_override(
+    http_request: Request,
+    connector_id: str,
+    request: CitationOverrideRequest,
+    api_key: str = Depends(verify_api_key)
+):
     """
     Apply citation overrides and resume research generation.
     
@@ -1016,19 +1080,29 @@ async def citation_override(connector_id: str, request: CitationOverrideRequest)
 # =====================
 
 @app.post("/api/search", response_model=SearchResponse)
-async def search(request: SearchRequest):
+@limiter.limit("100/minute")
+async def search(
+    http_request: Request,
+    request: SearchRequest,
+    api_key: str = Depends(verify_api_key)
+):
     """Search across connector research documents."""
     if not vector_manager or not connector_manager:
         raise HTTPException(status_code=503, detail="Services not initialized")
     
+    # Sanitize search query
+    sanitized_query = InputSanitizer.sanitize_string(request.query, max_length=500)
+    
     if request.connector_id:
+        # Sanitize connector_id
+        sanitized_connector_id = InputSanitizer.sanitize_connector_id(request.connector_id)
         # Search within specific connector
-        if not vector_manager.index_exists(request.connector_id):
-            raise HTTPException(status_code=404, detail=f"No index found for connector '{request.connector_id}'")
+        if not vector_manager.index_exists(sanitized_connector_id):
+            raise HTTPException(status_code=404, detail=f"No index found for connector '{sanitized_connector_id}'")
         
         results = vector_manager.search(
-            connector_id=request.connector_id,
-            query=request.query,
+            connector_id=sanitized_connector_id,
+            query=sanitized_query,
             top_k=request.top_k
         )
     else:
@@ -1046,7 +1120,7 @@ async def search(request: SearchRequest):
         )
     
     return SearchResponse(
-        query=request.query,
+        query=sanitized_query,
         results=[
             SearchResultItem(
                 id=r["id"],
@@ -1063,7 +1137,12 @@ async def search(request: SearchRequest):
 
 
 @app.post("/api/chat", response_model=ChatResponse)
-async def chat(request: ChatRequest):
+@limiter.limit("50/minute")
+async def chat(
+    http_request: Request,
+    request: ChatRequest,
+    api_key: str = Depends(verify_api_key)
+):
     """Chat with connector research using RAG."""
     if not vector_manager or not connector_manager or not research_agent:
         raise HTTPException(status_code=503, detail="Services not initialized")
@@ -1089,7 +1168,7 @@ async def chat(request: ChatRequest):
             )
         
         results = vector_manager.search_all_connectors(
-            query=request.message,
+            query=sanitized_message,
             connector_ids=connector_ids,
             top_k=request.top_k
         )
@@ -1130,7 +1209,7 @@ Answer based on the context above:"""
     answer = response.choices[0].message.content
     
     return ChatResponse(
-        question=request.message,
+        question=sanitized_message,
         answer=answer,
         sources=[
             {
@@ -1148,7 +1227,11 @@ Answer based on the context above:"""
 # =====================
 
 @app.get("/api/vault/stats", response_model=VaultStatsResponse)
-async def get_vault_stats():
+@limiter.limit("100/minute")
+async def get_vault_stats(
+    request: Request,
+    api_key: str = Depends(verify_api_key)
+):
     """Get Knowledge Vault statistics."""
     if not knowledge_vault:
         raise HTTPException(status_code=503, detail="Knowledge Vault not initialized")
@@ -1163,7 +1246,12 @@ async def get_vault_stats():
 
 
 @app.get("/api/vault/{connector_name}/stats")
-async def get_connector_vault_stats(connector_name: str):
+@limiter.limit("100/minute")
+async def get_connector_vault_stats(
+    request: Request,
+    connector_name: str,
+    api_key: str = Depends(verify_api_key)
+):
     """Get Knowledge Vault statistics for a specific connector."""
     if not knowledge_vault:
         raise HTTPException(status_code=503, detail="Knowledge Vault not initialized")
@@ -1173,7 +1261,12 @@ async def get_connector_vault_stats(connector_name: str):
 
 
 @app.post("/api/vault/index", response_model=VaultDocumentResponse)
-async def index_vault_document(request: VaultIndexRequest):
+@limiter.limit("50/minute")
+async def index_vault_document(
+    http_request: Request,
+    request: VaultIndexRequest,
+    api_key: str = Depends(verify_api_key)
+):
     """Index documentation into the Knowledge Vault."""
     if not knowledge_vault:
         raise HTTPException(status_code=503, detail="Knowledge Vault not initialized")
@@ -1206,7 +1299,12 @@ async def index_vault_document(request: VaultIndexRequest):
 
 
 @app.post("/api/vault/index-url", response_model=VaultDocumentResponse)
-async def index_vault_from_url(request: VaultIndexFromUrlRequest):
+@limiter.limit("30/minute")
+async def index_vault_from_url(
+    http_request: Request,
+    request: VaultIndexFromUrlRequest,
+    api_key: str = Depends(verify_api_key)
+):
     """Index documentation from a URL into the Knowledge Vault."""
     if not knowledge_vault:
         raise HTTPException(status_code=503, detail="Knowledge Vault not initialized")
@@ -1236,12 +1334,15 @@ async def index_vault_from_url(request: VaultIndexFromUrlRequest):
 
 
 @app.post("/api/vault/index-file")
+@limiter.limit("30/minute")
 async def index_vault_from_file(
+    request: Request,
     connector_name: str = Form(...),
     title: str = Form(None),
     source_type: str = Form("official_docs"),
     source_url: Optional[str] = Form(None),
-    file: UploadFile = File(...)
+    file: UploadFile = File(...),
+    api_key: str = Depends(verify_api_key)
 ):
     """Upload and index a file into the Knowledge Vault (supports PDF, MD, TXT, JSON, HTML)."""
     if not knowledge_vault:
@@ -1296,7 +1397,12 @@ async def index_vault_from_file(
 
 
 @app.post("/api/vault/search", response_model=List[VaultSearchResultResponse])
-async def search_vault(request: VaultSearchRequest):
+@limiter.limit("100/minute")
+async def search_vault(
+    http_request: Request,
+    request: VaultSearchRequest,
+    api_key: str = Depends(verify_api_key)
+):
     """Search the Knowledge Vault for a connector."""
     if not knowledge_vault:
         raise HTTPException(status_code=503, detail="Knowledge Vault not initialized")
@@ -1323,7 +1429,12 @@ async def search_vault(request: VaultSearchRequest):
 
 
 @app.delete("/api/vault/{connector_name}")
-async def delete_vault_knowledge(connector_name: str):
+@limiter.limit("20/minute")
+async def delete_vault_knowledge(
+    request: Request,
+    connector_name: str,
+    api_key: str = Depends(verify_api_key)
+):
     """Delete all knowledge for a connector from the vault."""
     if not knowledge_vault:
         raise HTTPException(status_code=503, detail="Knowledge Vault not initialized")
@@ -1338,7 +1449,11 @@ async def delete_vault_knowledge(connector_name: str):
 
 
 @app.get("/api/vault/connectors")
-async def list_vault_connectors():
+@limiter.limit("100/minute")
+async def list_vault_connectors(
+    request: Request,
+    api_key: str = Depends(verify_api_key)
+):
     """List all connectors with knowledge in the vault."""
     if not knowledge_vault:
         raise HTTPException(status_code=503, detail="Knowledge Vault not initialized")
@@ -1352,11 +1467,14 @@ async def list_vault_connectors():
 # =====================
 
 @app.post("/api/vault/bulk-upload")
+@limiter.limit("5/minute")
 async def bulk_upload_files(
+    request: Request,
     background_tasks: BackgroundTasks,
     connector_name: str = Form(...),
     source_type: str = Form("official_docs"),
-    files: List[UploadFile] = File(...)
+    files: List[UploadFile] = File(...),
+    api_key: str = Depends(verify_api_key)
 ):
     """
     Upload multiple files (PDF, MD, TXT) to the Knowledge Vault.
@@ -1420,7 +1538,11 @@ async def get_bulk_upload_progress(job_id: str):
 
 
 @app.get("/api/vault/bulk-upload")
-async def list_bulk_upload_jobs():
+@limiter.limit("100/minute")
+async def list_bulk_upload_jobs(
+    request: Request,
+    api_key: str = Depends(verify_api_key)
+):
     """List all bulk upload jobs."""
     if not knowledge_vault:
         raise HTTPException(status_code=503, detail="Knowledge Vault not initialized")
@@ -1430,10 +1552,13 @@ async def list_bulk_upload_jobs():
 
 
 @app.post("/api/vault/bulk-upload-sync")
+@limiter.limit("2/minute")
 async def bulk_upload_files_sync(
+    request: Request,
     connector_name: str = Form(...),
     source_type: str = Form("official_docs"),
-    files: List[UploadFile] = File(...)
+    files: List[UploadFile] = File(...),
+    api_key: str = Depends(verify_api_key)
 ):
     """
     Upload multiple files synchronously (for smaller batches).
