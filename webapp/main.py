@@ -204,6 +204,15 @@ async def lifespan(app: FastAPI):
     """Initialize services on startup."""
     global connector_manager, github_cloner, research_agent, vector_manager, fivetran_crawler, knowledge_vault
     
+    # Download NLTK data for sentence tokenization (used by citation validator)
+    try:
+        import nltk
+        nltk.download('punkt_tab', quiet=True)
+        nltk.download('punkt', quiet=True)
+        print("✓ NLTK data downloaded (punkt tokenizer)")
+    except Exception as e:
+        print(f"⚠ NLTK data download failed: {e}")
+    
     # Initialize database first (if DATABASE_URL is set)
     if os.getenv("DATABASE_URL"):
         try:
