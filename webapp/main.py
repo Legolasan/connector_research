@@ -650,7 +650,7 @@ async def generate_research(
     # Update status
     connector_manager.update_connector(connector_id, status=ConnectorStatus.RESEARCHING.value)
     
-        async def run_research():
+    async def run_research():
         """Background task to run research generation."""
         try:
             github_context = None
