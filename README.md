@@ -1,15 +1,32 @@
 # Connector Research Platform
 
-A modern, enterprise-ready platform for generating comprehensive research documents for data integration connectors. Features multi-source knowledge retrieval, intelligent validation, and full auditability.
+A modern, enterprise-ready platform for generating comprehensive research documents for data integration connectors. Features multi-source knowledge retrieval, intelligent validation, parallel processing, and full auditability.
 
-## Features
+## ✨ Key Features
 
 ### 🔍 Multi-Source Knowledge Retrieval
 - **Knowledge Vault**: Pre-indexed official documentation with highest confidence scoring
 - **DocWhisperer™**: Official library documentation via Context7 MCP integration
+- **Official Doc Crawler**: Automated pre-crawling of API documentation with ethical compliance
 - **Web Search**: Supplementary context from web search (Tavily)
 - **GitHub Analysis**: Code pattern extraction from existing implementations
 - **Fivetran Parity**: Comparison with Fivetran's implementation for reference
+- **Hevo Comparison**: Optional comparison with Hevo connector implementations
+
+### ⚡ DAG-Based Parallel Research (NEW)
+- **Capability-Based Tasks**: Research split by function (search, fetch, summarize, synthesize)
+- **Shared Artifact Store**: Redis-backed fact registry prevents redundant work
+- **Smart Caching**: Semantic cache keys for web search and LLM responses
+- **Convergence Checking**: Early-exit when research has gathered sufficient information
+- **Progress Events**: Real-time phase-by-phase progress tracking
+
+### 🌐 Official Documentation Pre-Crawling (NEW)
+- **Two-Gate Filtering**: Pattern-based allow/deny + keyword-based ranking
+- **llms.txt Priority**: Checks for LLM-optimized content first
+- **robots.txt Compliance**: Respects crawler directives
+- **Sitemap Support**: Parses sitemap indexes recursively
+- **URL Normalization**: Prevents duplicate crawling
+- **Ethical Rate Limiting**: Polite delays between requests
 
 ### 🛡️ Hallucination Prevention & Validation
 - **Cite-or-Refuse Validator**: Deterministic pre-Critic validation requiring citations for all factual claims
@@ -36,9 +53,18 @@ A modern, enterprise-ready platform for generating comprehensive research docume
 
 ### 📚 Knowledge Vault Management
 - **Bulk PDF Upload**: Support for 500+ PDF documents
+- **GitHub Repo Indexing**: Auto-indexes Java, Python, JS files from cloned repos
+- **Fivetran Doc Indexing**: Auto-indexes crawled Fivetran documentation
 - **Pre-Indexing**: Documents indexed into pgvector for fast similarity search
 - **Per-Connector Storage**: Organized knowledge base per connector
 - **Source Type Tracking**: Official docs, SDK references, ERD schemas, changelogs, etc.
+
+### 🔒 Enterprise Security (NEW)
+- **API Key Authentication**: Secure endpoints with API key middleware
+- **Rate Limiting**: Configurable limits per endpoint (slowapi)
+- **CORS Configuration**: Controlled cross-origin access
+- **Input Sanitization**: Protection against HTML, JS, SQL injection
+- **Request Size Limits**: Configurable file upload and JSON limits
 
 ### 🧪 Comprehensive Testing
 - **Unit Tests**: Full coverage of validators and claim extraction
@@ -52,269 +78,439 @@ A modern, enterprise-ready platform for generating comprehensive research docume
   - Citation spam
   - Cross-section inconsistencies
 
-## Architecture
+## 🏗️ Architecture
+
+### System Overview
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                         FastAPI App                              │
+├─────────────────────────────────────────────────────────────────┤
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────────┐  │
+│  │  Connector  │  │  Knowledge  │  │   Research Generation   │  │
+│  │   Manager   │  │    Vault    │  │     (DAG-based)         │  │
+│  └─────────────┘  └─────────────┘  └─────────────────────────┘  │
+├─────────────────────────────────────────────────────────────────┤
+│                      Celery Workers                              │
+│  ┌──────────┐  ┌──────────┐  ┌───────────┐  ┌───────────────┐  │
+│  │  Search  │  │  Fetch   │  │ Summarize │  │  Synthesize   │  │
+│  │  Tasks   │  │  Tasks   │  │   Tasks   │  │    Tasks      │  │
+│  └──────────┘  └──────────┘  └───────────┘  └───────────────┘  │
+├─────────────────────────────────────────────────────────────────┤
+│  ┌─────────────────────────────────────────────────────────────┐│
+│  │                     Redis                                    ││
+│  │  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌─────────────┐ ││
+│  │  │ Artifact │  │  Search  │  │   LLM    │  │  Progress   │ ││
+│  │  │  Store   │  │  Cache   │  │  Cache   │  │   Events    │ ││
+│  │  └──────────┘  └──────────┘  └──────────┘  └─────────────┘ ││
+│  └─────────────────────────────────────────────────────────────┘│
+├─────────────────────────────────────────────────────────────────┤
+│  ┌─────────────────────────────────────────────────────────────┐│
+│  │              PostgreSQL + pgvector                           ││
+│  │  ┌──────────┐  ┌──────────┐  ┌──────────────────────────┐  ││
+│  │  │Connectors│  │ Research │  │ Document Chunks (vectors)│  ││
+│  │  │          │  │   Docs   │  │                          │  ││
+│  │  └──────────┘  └──────────┘  └──────────────────────────┘  ││
+│  └─────────────────────────────────────────────────────────────┘│
+└─────────────────────────────────────────────────────────────────┘
+```
 
 ### Core Components
 
-- **Research Agent** (`webapp/services/research_agent.py`): Main orchestration for research generation
-- **Citation Validator** (`webapp/services/citation_validator.py`): Pre-Critic citation validation
-- **Evidence Integrity Validator** (`webapp/services/evidence_integrity_validator.py`): Citation-to-evidence mapping validation
-- **Critic Agent** (`webapp/services/critic_agent.py`): Section quality review
-- **Knowledge Vault** (`webapp/services/knowledge_vault.py`): Pre-indexed documentation management
-- **DocWhisperer** (`webapp/services/research_agent.py`): Official library documentation retrieval
+| Component | File | Purpose |
+|-----------|------|---------|
+| **Research Agent** | `research_agent.py` | Main orchestration for research generation |
+| **DAG Orchestrator** | `research_dag_orchestrator.py` | Capability-based task DAG execution |
+| **Artifact Store** | `artifact_store.py` | Redis-backed shared artifact + facts registry |
+| **Research Cache** | `cache.py` | Semantic cache with proper keys |
+| **Celery Tasks** | `tasks.py` | Capability-based parallel tasks |
+| **Convergence Checker** | `convergence.py` | Early-exit detection |
+| **Citation Validator** | `citation_validator.py` | Pre-Critic citation validation |
+| **Evidence Validator** | `evidence_integrity_validator.py` | Citation-to-evidence mapping |
+| **Critic Agent** | `critic_agent.py` | Section quality review |
+| **Knowledge Vault** | `knowledge_vault.py` | Pre-indexed documentation management |
+| **Doc Crawler** | `doc_crawler.py` | Official documentation pre-crawling |
+| **Doc Registry** | `doc_registry.py` | Connector documentation URL registry |
 
 ### Data Flow
 
 ```
 1. User creates connector → Connector Manager
-2. Research generation starts → Research Agent
-3. For each section:
-   a. Multi-source knowledge retrieval (Vault → DocWhisperer → Web)
-   b. Section generation with LLM
-   c. Citation validation (3 attempts with regeneration)
-   d. Evidence integrity validation
-   e. Critic Agent review
-   f. Claim extraction and storage
-4. Canonical facts aggregation
-5. Document saved with full claim graph
+2. Official docs pre-crawled → Doc Crawler → Knowledge Vault
+3. Research generation starts → DAG Orchestrator
+4. Phase 1: Web Search Tasks (parallel)
+   → Results cached → Artifact Store
+5. Phase 2: Source Fetch Tasks (parallel)
+   → Page content cached → Artifact Store
+6. Phase 3: Summarize Tasks (parallel)
+   → Facts extracted → Facts Registry
+7. Convergence Check
+   → If not converged, loop back to Phase 1
+8. Phase 4: Synthesis Supervisor
+   → Deduplicate claims
+   → Resolve conflicts
+   → Generate final document
+9. For each section:
+   a. Citation validation (3 attempts with regeneration)
+   b. Evidence integrity validation
+   c. Critic Agent review
+   d. Claim extraction and storage
+10. Document saved with full claim graph
 ```
 
-## Installation
+## 🚀 Installation
 
 ### Prerequisites
 - Python 3.11+
-- PostgreSQL with pgvector extension (optional, falls back to JSON storage)
+- PostgreSQL with pgvector extension
+- Redis (for caching and task queue)
 - OpenAI API key
 - Tavily API key (for web search)
-- Railway/PostgreSQL database (or local PostgreSQL)
 
-### Setup
+### Quick Start
 
-1. Clone the repository:
+1. **Clone the repository:**
 ```bash
-git clone <repository-url>
+git clone https://github.com/Legolasan/connector_research.git
 cd connector_research
 ```
 
-2. Install dependencies:
+2. **Install dependencies:**
 ```bash
 pip install -r requirements.txt
+playwright install chromium  # For JS-rendered page crawling
 ```
 
-3. Set up environment variables:
+3. **Set up environment variables:**
 ```bash
-cp .env.example .env
-# Edit .env with your API keys and database URL
+# Required
+export OPENAI_API_KEY="your-openai-key"
+export TAVILY_API_KEY="your-tavily-key"
+export DATABASE_URL="postgresql://user:pass@host:5432/dbname"
+export REDIS_URL="redis://localhost:6379/0"
+
+# Optional
+export RESEARCH_MODEL="gpt-4o"  # Default model
+export API_KEY="your-api-key"   # For API authentication
 ```
 
-Required environment variables:
-- `OPENAI_API_KEY`: OpenAI API key for LLM
-- `TAVILY_API_KEY`: Tavily API key for web search
-- `DATABASE_URL`: PostgreSQL connection string
-- `RESEARCH_MODEL`: OpenAI model (default: gpt-4o)
-
-4. Initialize database:
+4. **Initialize database:**
 ```bash
-alembic upgrade head
+cd webapp
+python migrate.py upgrade
 ```
 
-5. Run the application:
+5. **Run the application:**
 ```bash
-uvicorn webapp.main:app --reload
+# Web server
+uvicorn webapp.main:app --host 0.0.0.0 --port 8000
+
+# Celery worker (in separate terminal)
+cd webapp && celery -A services.celery_app worker --loglevel=info --concurrency=4
 ```
 
-## Usage
+### Railway Deployment
+
+The project includes Railway-specific configuration:
+
+**Procfile:**
+```
+release: cd webapp && python migrate.py upgrade
+web: playwright install chromium && cd webapp && uvicorn main:app --host 0.0.0.0 --port ${PORT:-8000}
+worker: cd webapp && celery -A services.celery_app worker --loglevel=info --concurrency=4
+```
+
+**Required Railway Services:**
+- PostgreSQL (with pgvector extension)
+- Redis
+
+**Environment Variables to Set:**
+- `OPENAI_API_KEY`
+- `TAVILY_API_KEY`
+- `DATABASE_URL` (auto-set by Railway PostgreSQL)
+- `REDIS_URL` (reference from Redis service)
+
+## 📖 Usage
 
 ### Creating a Connector
 
 1. Navigate to the web interface
 2. Click "Create New Connector"
 3. Fill in:
-   - Connector name
-   - Connector type (or "auto" for discovery)
-   - GitHub URL (optional, for code analysis)
-   - Fivetran URLs (optional, for parity comparison)
-   - Hevo GitHub URL (optional, for comparison)
+   - **Connector name** (e.g., "Shopify")
+   - **Connector type** (or "auto" for discovery)
+   - **GitHub URL** (optional, for code analysis)
+   - **Hevo GitHub URL** (optional, for comparison)
+   - **Fivetran URLs** (optional, for parity comparison)
+   - **Official Documentation URLs** (optional, for pre-crawling)
 4. Click "Create Connector"
 
 ### Pre-Indexing Documentation (Knowledge Vault)
 
+**Option 1: Automatic Pre-Crawling**
+- Official documentation URLs are automatically crawled when creating a connector
+- Supports `llms.txt`, sitemaps, and pattern-based filtering
+
+**Option 2: Manual Upload**
 1. Navigate to "Knowledge Vault" section
 2. Select connector
-3. Upload PDFs or index from URL
-4. Documents are automatically indexed into pgvector
+3. Upload PDFs or paste documentation text
+4. Documents are automatically chunked and indexed
 
 ### Generating Research
 
 1. Click "Generate Research" on a connector
-2. Monitor progress in real-time
+2. Monitor real-time progress:
+   - Phase indicators (search → fetch → summarize → synthesize)
+   - Fact counts by category
+   - Convergence status
 3. If citation validation fails:
    - Review missing citations in the intervention modal
    - Choose action: Remove, Rewrite to Unknown, Attach Citation, or Approve as Assumption
-   - Apply overrides and resume
 4. If stop-the-line is triggered:
    - Review contradictions and uncertainty flags
    - Provide additional context or approve assumptions
-   - Resume research generation
 
 ### Viewing Research
 
 1. Click "View Research" on a completed connector
 2. Navigate through sections using the table of contents
-3. Interactive method cards show extraction details
-4. Download as Markdown for offline use
+3. Interactive method cards show extraction details per method
+4. Object catalog with full schema information
+5. Download as Markdown for offline use
 
-## API Endpoints
+## 🔌 API Endpoints
 
 ### Connectors
-- `GET /api/connectors` - List all connectors
-- `POST /api/connectors` - Create new connector
-- `GET /api/connectors/{id}` - Get connector details
-- `POST /api/connectors/{id}/generate` - Start research generation
-- `GET /api/connectors/{id}/status` - Get generation progress
-- `POST /api/connectors/{id}/cancel` - Cancel generation
-- `GET /api/connectors/{id}/research` - Get research document
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/connectors` | List all connectors |
+| POST | `/api/connectors` | Create new connector |
+| POST | `/api/connectors/upload` | Create with file upload |
+| GET | `/api/connectors/{id}` | Get connector details |
+| DELETE | `/api/connectors/{id}` | Delete connector |
+| POST | `/api/connectors/{id}/generate` | Start research generation |
+| GET | `/api/connectors/{id}/status` | Get generation progress |
+| GET | `/api/connectors/{id}/progress` | Get DAG progress (phases) |
+| POST | `/api/connectors/{id}/cancel` | Cancel generation |
+| GET | `/api/connectors/{id}/research` | Get research document |
 
 ### Citation Validation
-- `POST /api/connectors/{id}/citation-report` - Get citation validation report
-- `POST /api/connectors/{id}/citation-override` - Apply citation overrides
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/connectors/{id}/citation-report` | Get validation report |
+| POST | `/api/connectors/{id}/citation-override` | Apply citation overrides |
 
 ### Knowledge Vault
-- `GET /api/vault/stats` - Get vault statistics
-- `GET /api/vault/{connector_name}/stats` - Get connector-specific stats
-- `POST /api/vault/index` - Index document from text
-- `POST /api/vault/index-url` - Index document from URL
-- `POST /api/vault/index-pdf` - Index PDF document
-- `POST /api/vault/bulk-upload` - Bulk upload PDFs
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/vault/stats` | Get vault statistics |
+| GET | `/api/vault/{connector}/stats` | Get connector-specific stats |
+| POST | `/api/vault/index` | Index document from text |
+| POST | `/api/vault/index-url` | Index document from URL |
+| POST | `/api/vault/index-pdf` | Index PDF document |
+| POST | `/api/vault/bulk-upload` | Bulk upload PDFs |
+| GET | `/api/vault/bulk-progress/{job_id}` | Get bulk upload progress |
 
 ### Search
-- `POST /api/search` - Search across research documents
-- `POST /api/chat` - Chat with research documents
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/search` | Search across research documents |
+| POST | `/api/chat` | Chat with research documents |
 
-## Testing
+### Health
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/health` | Health check |
+| GET | `/api/health` | Detailed health status |
 
-Run the full test suite:
+## 🧪 Testing
+
 ```bash
+# Run all tests
 pytest tests/ -v
-```
 
-Run specific test files:
-```bash
+# Run specific test files
 pytest tests/test_citation_validator.py -v
 pytest tests/test_evidence_integrity_validator.py -v
 pytest tests/test_research_agent_integration.py -v
-```
 
-Run with coverage:
-```bash
+# Run with coverage
 pytest tests/ --cov=webapp/services --cov-report=html
 ```
 
-## Database Migrations
+### Hallucination Regression Scenarios
 
-The project uses Alembic for database migrations:
+| Scenario | Expected Behavior |
+|----------|-------------------|
+| Docs missing rate limit | Mark as "Unknown" |
+| Docs contradict scopes | Flag contradiction, use confidence-weighted resolution |
+| Fivetran mentions object not in docs | Flag with "?" in Fivetran Support column |
+| GitHub uses endpoint docs don't mention | Flag as low confidence |
+| Table rows without citations | Auto-fail, regenerate with failure report |
+| Citation spam (tags without evidence) | Evidence Integrity Validator fails |
+| Inconsistent claims across sections | Contradiction detector flags, stop-the-line if critical |
 
-```bash
-# Create a new migration
-alembic revision --autogenerate -m "description"
-
-# Apply migrations
-alembic upgrade head
-
-# Rollback
-alembic downgrade -1
-```
-
-## Project Structure
+## 📁 Project Structure
 
 ```
 connector_research/
 ├── webapp/
-│   ├── main.py                 # FastAPI application
+│   ├── main.py                          # FastAPI application
+│   ├── migrate.py                       # Database migration script
 │   ├── services/
-│   │   ├── research_agent.py   # Main research generation
-│   │   ├── citation_validator.py
+│   │   ├── research_agent.py            # Main research generation
+│   │   ├── research_dag_orchestrator.py # DAG-based orchestration
+│   │   ├── artifact_store.py            # Redis artifact store
+│   │   ├── cache.py                     # Research cache
+│   │   ├── tasks.py                     # Celery tasks
+│   │   ├── celery_app.py                # Celery configuration
+│   │   ├── convergence.py               # Convergence checking
+│   │   ├── citation_validator.py        # Citation validation
 │   │   ├── evidence_integrity_validator.py
-│   │   ├── critic_agent.py
-│   │   ├── knowledge_vault.py
+│   │   ├── critic_agent.py              # Section review
+│   │   ├── contradiction_detector.py
+│   │   ├── contradiction_resolver.py
+│   │   ├── uncertainty_model.py
+│   │   ├── engineering_cost_analyzer.py
+│   │   ├── knowledge_vault.py           # Document indexing
+│   │   ├── doc_crawler.py               # Official doc crawler
+│   │   ├── doc_registry.py              # Connector doc URLs
+│   │   ├── fivetran_crawler.py          # Fivetran doc crawler
+│   │   ├── github_cloner.py             # GitHub repo analysis
 │   │   ├── connector_manager.py
 │   │   ├── database.py
-│   │   └── ...
+│   │   ├── vector_manager.py
+│   │   ├── security.py                  # API security
+│   │   └── __init__.py
 │   ├── templates/
-│   │   └── index.html          # Main UI
+│   │   ├── index.html                   # Main dashboard
+│   │   ├── base.html
+│   │   └── research_view.html           # Research viewer
 │   └── static/
-│       └── app.js              # Frontend logic
+│       └── app.js                       # Frontend logic
 ├── alembic/
-│   └── versions/               # Database migrations
+│   ├── env.py
+│   └── versions/                        # Database migrations
+│       ├── 001_initial_schema.py
+│       ├── 002_add_pgvector_embedding.py
+│       ├── 003_add_citation_validation.py
+│       ├── 004_add_claim_graph_storage.py
+│       └── 005_add_hevo_github_url.py
 ├── tests/
-│   ├── fixtures/               # Test scenarios
+│   ├── conftest.py
+│   ├── fixtures/
+│   │   └── hallucination_scenarios.py
 │   ├── test_citation_validator.py
 │   ├── test_evidence_integrity_validator.py
 │   └── test_research_agent_integration.py
+├── connectors/
+│   └── _agent/
+│       ├── AGENT_INSTRUCTIONS.md
+│       └── connectors_registry.json
 ├── requirements.txt
 ├── pytest.ini
+├── Procfile
+├── alembic.ini
 └── README.md
 ```
 
-## Key Features in Detail
+## ⚙️ Configuration
 
-### Citation Validation
+### Environment Variables
 
-The Cite-or-Refuse Validator ensures all factual claims have proper citations:
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `OPENAI_API_KEY` | Yes | - | OpenAI API key |
+| `TAVILY_API_KEY` | Yes | - | Tavily search API key |
+| `DATABASE_URL` | Yes | - | PostgreSQL connection string |
+| `REDIS_URL` | No | `redis://localhost:6379/0` | Redis connection string |
+| `RESEARCH_MODEL` | No | `gpt-4o` | OpenAI model for generation |
+| `API_KEY` | No | - | API authentication key |
+| `MAX_CONTENT_LENGTH` | No | `104857600` | Max upload size (100MB) |
 
-- **3-Pass Parsing**: Strips code blocks, extracts tables separately, then sentence-splits prose
-- **Local Citation Checking**: Citations must be within 250 characters of the claim
-- **Table Row Validation**: Every non-header row must include ≥1 citation tag
-- **Known Safe Statements**: Allowlist for "N/A", "Unknown", "This requires runtime verification"
-- **Smart Regeneration**: Up to 3 attempts with detailed failure reports
+### Doc Crawler Configuration
 
-### Evidence Integrity
+The doc crawler can be configured per-connector in `doc_registry.py`:
 
-The Evidence Integrity Validator ensures citations are valid:
+```python
+"shopify": ConnectorDocConfig(
+    name="Shopify",
+    official_docs=[
+        "https://shopify.dev/docs/api",
+        "https://shopify.dev/docs/api/admin-rest",
+    ],
+    domain="shopify.dev",
+    url_patterns=[
+        "/docs/api/*",
+        "/docs/api/admin-rest/*",
+        "/changelog/*",
+    ],
+    exclude_patterns=[
+        "/docs/api/shipping-partner-platform/*",
+        "*/beta/*",
+    ]
+)
+```
 
-- **Citation Tag Validation**: All citation tags must exist in evidence_map
-- **Required Fields Check**: Evidence entries must have url, snippet, source_type, timestamp
-- **Snippet-Keyword Matching**: Optional lightweight matching to verify snippet supports claim
-- **Missing Citation Detection**: Catches citation spam (citations that don't exist)
+## 🔧 Database Migrations
 
-### Claim Graph Storage
+```bash
+# Check migration status
+python webapp/migrate.py check
 
-Full auditability through structured claim storage:
+# Apply migrations
+python webapp/migrate.py upgrade
 
-- **Structured Claims**: Each claim includes:
-  - Claim text and type
-  - Evidence tags and stable IDs
-  - Confidence score
-  - Sources and timestamp
-  - Assumption flag (if approved as assumption)
-- **Canonical Facts**: Aggregated facts with contradiction resolution
-- **Evidence Map**: Stable SHA256-based IDs prevent retry instability
+# Show current version
+python webapp/migrate.py current
 
-### Human Intervention
+# Show history
+python webapp/migrate.py history
 
-When validation fails or stop-the-line is triggered:
+# Rollback (use with caution)
+python webapp/migrate.py downgrade -1
+```
 
-- **Citation Intervention Modal**: Review and fix missing citations
-- **Actions Available**:
-  - Remove: Delete the claim
-  - Rewrite to Unknown: Change to "Unknown" or "N/A - not documented"
-  - Attach Citation: Link to existing evidence (validated)
-  - Approve as Assumption: Renders in dedicated "Assumptions" section
-- **Security**: All inputs sanitized, citations validated against evidence_map
+## 📈 Performance
 
-## Contributing
+### Expected Performance with DAG Architecture
+
+| Metric | Before | After |
+|--------|--------|-------|
+| Web Searches | Sequential | Parallel (6 concurrent) |
+| Source Fetching | Sequential | Parallel (10-20 concurrent) |
+| Cache Hit Rate | ~20% | ~60-80% |
+| Early Exit | Never | When converged |
+| **Total Time** | **5-10 min** | **1.5-3 min** |
+
+### Cache TTLs
+
+| Cache Type | TTL | Purpose |
+|------------|-----|---------|
+| Web Search | 24 hours | Search results |
+| LLM Response | 6 hours | Generated content |
+| Page Content | 12 hours | Crawled pages |
+
+## 🤝 Contributing
 
 1. Fork the repository
-2. Create a feature branch
+2. Create a feature branch (`git checkout -b feature/amazing-feature`)
 3. Make your changes
 4. Add tests for new features
-5. Run the test suite
-6. Submit a pull request
+5. Run the test suite (`pytest tests/ -v`)
+6. Commit your changes (`git commit -m 'Add amazing feature'`)
+7. Push to the branch (`git push origin feature/amazing-feature`)
+8. Open a Pull Request
 
-## License
+## 📄 License
 
 [Add your license here]
 
-## Support
+## 🆘 Support
 
 For issues, questions, or contributions, please open an issue on GitHub.
+
+---
+
+**Built with ❤️ for enterprise connector research**
