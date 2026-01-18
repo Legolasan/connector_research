@@ -9,6 +9,7 @@ import os
 import re
 import asyncio
 import hashlib
+import traceback
 from typing import List, Dict, Any, Optional, Callable, Tuple
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -2698,7 +2699,6 @@ Generate comprehensive markdown content for this section. Include:
             return formatted
             
         except Exception as e:
-            import traceback
             error_trace = traceback.format_exc()
             print(f"Error generating section {section.number} ({section.name}): {e}")
             print(f"Traceback:\n{error_trace}")
@@ -2951,7 +2951,6 @@ Generate comprehensive markdown content for this section with PROPER CITATIONS.
             return formatted
             
         except Exception as e:
-            import traceback
             error_trace = traceback.format_exc()
             print(f"Error regenerating section {section.number} ({section.name}): {e}")
             print(f"Traceback:\n{error_trace}")
@@ -3279,7 +3278,6 @@ Generate comprehensive markdown content for this section with PROPER CITATIONS.
         Returns:
             List of method names that were found to be available
         """
-        import re
         discovered = []
         content_lower = discovery_content.lower()
         

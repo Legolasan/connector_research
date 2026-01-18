@@ -21,6 +21,9 @@ import json
 
 from dotenv import load_dotenv
 
+# Deferred import to avoid circular dependency at module load time
+# The actual import is done inside methods that need it
+
 load_dotenv()
 
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
@@ -79,7 +82,7 @@ class ConvergenceChecker:
             Tuple of (converged: bool, reason: str)
         """
         # Import here to avoid circular dependency
-        from webapp.services.artifact_store import get_artifact_store
+        from services.artifact_store import get_artifact_store
         
         store = get_artifact_store(self.connector_name)
         
@@ -131,7 +134,7 @@ class ConvergenceChecker:
         Returns:
             Average confidence score (0.0 - 1.0)
         """
-        from webapp.services.artifact_store import get_artifact_store
+        from services.artifact_store import get_artifact_store
         
         store = get_artifact_store(self.connector_name)
         
@@ -181,7 +184,7 @@ class ConvergenceChecker:
         Returns:
             Dict with convergence metrics
         """
-        from webapp.services.artifact_store import get_artifact_store
+        from services.artifact_store import get_artifact_store
         
         store = get_artifact_store(self.connector_name)
         

@@ -125,13 +125,13 @@ class ResearchDAGOrchestrator:
         Returns:
             Task group ID for tracking
         """
-        from webapp.services.tasks import (
+        from services.tasks import (
             web_search_task, 
             fetch_discovered_urls,
             summarize_all_artifacts,
             check_and_synthesize
         )
-        from webapp.services.artifact_store import get_artifact_store, emit_progress
+        from services.artifact_store import get_artifact_store, emit_progress
         
         # Clear previous state
         self._clear_state()
@@ -181,8 +181,8 @@ class ResearchDAGOrchestrator:
         Returns:
             Dict with status information
         """
-        from webapp.services.artifact_store import get_artifact_store, ProgressEmitter
-        from webapp.services.convergence import get_convergence_checker
+        from services.artifact_store import get_artifact_store, ProgressEmitter
+        from services.convergence import get_convergence_checker
         
         workflow_id = self._get_workflow_id()
         
@@ -295,7 +295,7 @@ class ResearchDAGOrchestrator:
         Returns:
             Document content or None if not ready
         """
-        from webapp.services.artifact_store import get_artifact_store
+        from services.artifact_store import get_artifact_store
         
         store = get_artifact_store(self.connector_name)
         
@@ -312,7 +312,7 @@ class ResearchDAGOrchestrator:
     def cancel(self):
         """Cancel the running workflow."""
         from celery.app.control import Control
-        from webapp.services.celery_app import celery_app
+        from services.celery_app import celery_app
         
         workflow_id = self._get_workflow_id()
         

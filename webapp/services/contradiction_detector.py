@@ -3,6 +3,7 @@ Contradiction Detector Service
 Identifies contradictions between sources, especially for critical claims.
 """
 
+import re
 from typing import List, Dict, Any, Optional
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
@@ -109,8 +110,6 @@ class ContradictionDetector:
     
     def _has_conflicting_values(self, text1: str, text2: str) -> bool:
         """Check if texts have conflicting numeric or categorical values."""
-        import re
-        
         # Extract numbers
         numbers1 = set(re.findall(r'\d+', text1))
         numbers2 = set(re.findall(r'\d+', text2))
@@ -172,8 +171,6 @@ class ContradictionDetector:
         
         This is a simplified extraction - could be enhanced with NLP.
         """
-        import re
-        
         claims = []
         
         # Look for statements with specific patterns

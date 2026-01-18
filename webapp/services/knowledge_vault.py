@@ -15,6 +15,7 @@ import re
 import io
 import hashlib
 import asyncio
+import traceback
 from typing import List, Dict, Any, Optional, Tuple, Callable
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -163,7 +164,6 @@ class KnowledgeVault:
                 db_available = is_database_available()
             except Exception as e:
                 print(f"📚 Knowledge Vault: Database init exception: {e}")
-                import traceback
                 traceback.print_exc()
         
         # Check if pgvector extension is actually available (not just the Python package)
@@ -841,7 +841,6 @@ class KnowledgeVault:
             return True
             
         except Exception as e:
-            import traceback
             progress.failed_files += 1
             error_msg = f"{filename}: {str(e)}"
             progress.errors.append(error_msg)
@@ -985,8 +984,6 @@ class KnowledgeVault:
         Returns:
             Dictionary with indexing statistics
         """
-        from pathlib import Path
-        
         repo_dir = Path(repo_path)
         if not repo_dir.exists():
             print(f"⚠ GitHub repo path does not exist: {repo_path}")

@@ -356,7 +356,6 @@ async def index(request: Request):
 async def view_research_page(request: Request, connector_id: str):
     """Render research document as a beautiful HTML page."""
     import markdown
-    import re
     
     if not connector_manager:
         raise HTTPException(status_code=503, detail="Connector Manager not initialized")
@@ -436,7 +435,6 @@ async def download_research(
 async def health_check():
     """Health check endpoint for Railway."""
     from services.database import is_database_available, get_db_session
-    import os
     
     db_url_set = bool(os.getenv("DATABASE_URL"))
     db_available = is_database_available()
@@ -868,7 +866,6 @@ async def generate_research(
                 section_name = ""
                 if progress.current_content:
                     # Try to extract section name from the format
-                    import re
                     match = re.search(r'Section \d+: (.+?)(?:\.\.\.|$)', progress.current_content)
                     if match:
                         section_name = match.group(1).strip()
@@ -1150,7 +1147,6 @@ async def citation_override(
     - Check evidence entry has url + snippet + source_type
     - Optional: Lightweight snippet-keyword matching
     """
-    import html
     from services.database import get_db_session, ResearchDocumentModel
     from services.evidence_integrity_validator import EvidenceIntegrityValidator
     
@@ -1199,7 +1195,6 @@ async def citation_override(
                 citation = html.escape(citation)
                 
                 # Extract citation tag (e.g., "web:1" from "[web:1]")
-                import re
                 citation_match = re.match(r'\[([^\]]+)\]', citation)
                 if not citation_match:
                     raise HTTPException(status_code=400, detail=f"Invalid citation format: {citation}")

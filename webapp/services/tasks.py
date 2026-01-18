@@ -23,14 +23,14 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Import Celery app
-from webapp.services.celery_app import celery_app
+from services.celery_app import celery_app
 
 # Import services
-from webapp.services.artifact_store import (
+from services.artifact_store import (
     ArtifactStore, Artifact, Fact, 
     get_artifact_store, emit_progress
 )
-from webapp.services.cache import ResearchCache, get_research_cache
+from services.cache import ResearchCache, get_research_cache
 
 # Environment
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
@@ -619,7 +619,7 @@ def check_and_synthesize(summarize_results: List[Dict], connector_name: str) -> 
     Returns:
         Synthesis result or status
     """
-    from webapp.services.convergence import ConvergenceChecker
+    from services.convergence import ConvergenceChecker
     
     checker = ConvergenceChecker(REDIS_URL, connector_name)
     converged, reason = checker.check_convergence()
