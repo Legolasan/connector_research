@@ -237,9 +237,9 @@ def create_sdk_section(method_name: str, section_number: int) -> ResearchSection
 This should be purely informational - NO code examples, NO code snippets.
 Instead, provide links to official documentation.
 
-## Official SDK Overview
+**Official SDK Overview**
 
-### 1. Available SDKs
+#### 1. Available SDKs
 
 | Language | Package Name | Repository | Documentation | Status |
 |----------|--------------|------------|---------------|--------|
@@ -250,7 +250,7 @@ Instead, provide links to official documentation.
 | Go | | [GitHub](link) | [Docs](link) | |
 | PHP | | [GitHub](link) | [Docs](link) | |
 
-### 2. SDK Capabilities Matrix
+#### 2. SDK Capabilities Matrix
 
 | Capability | Java | Python | Node.js | Notes |
 |------------|------|--------|---------|-------|
@@ -261,7 +261,7 @@ Instead, provide links to official documentation.
 | Retry Logic | ✓/✗ | ✓/✗ | ✓/✗ | |
 | Webhooks | ✓/✗ | ✓/✗ | ✓/✗ | |
 
-### 3. Installation Information
+#### 3. Installation Information
 
 | Language | Package Manager | Package Name | Latest Version |
 |----------|----------------|--------------|----------------|
@@ -271,7 +271,7 @@ Instead, provide links to official documentation.
 
 📚 **Installation Guide**: See [Official SDK Documentation](link)
 
-### 4. Authentication Support
+#### 4. Authentication Support
 
 | Auth Method | Java SDK | Python SDK | Node.js SDK |
 |-------------|----------|------------|-------------|
@@ -281,13 +281,13 @@ Instead, provide links to official documentation.
 
 📚 **Authentication Examples**: See [Official Auth Guide](link)
 
-### 5. SDK Limitations & Workarounds
+#### 5. SDK Limitations & Workarounds
 
 | SDK | Known Limitation | Workaround | Documentation |
 |-----|-----------------|------------|---------------|
 | | | | [Link](url) |
 
-### 6. Recommendation Summary
+#### 6. Recommendation Summary
 
 | Factor | Recommendation |
 |--------|---------------|
@@ -322,16 +322,16 @@ def create_method_section(method_name: str, section_number: int) -> ResearchSect
 This should be purely informational - NO code examples, NO code snippets.
 Instead, provide links to official documentation where code examples can be found.
 
-## {method_name} Overview
+**{method_name} Overview**
 
-### API Endpoint Information
+#### API Endpoint Information
 | Property | Value | Documentation Link |
 |----------|-------|-------------------|
 | Base URL | (actual URL) | [Official Docs](link) |
 | API Version | (version) | |
 | Authentication | (method) | |
 
-### Authentication Requirements
+#### Authentication Requirements
 
 **Required Credentials**
 | Credential | Description | Where to Obtain |
@@ -347,7 +347,7 @@ Instead, provide links to official documentation where code examples can be foun
 
 📚 **Code Examples**: See [Official Authentication Guide](link-to-docs)
 
-### Available Objects/Endpoints
+#### Available Objects/Endpoints
 
 | Object | Endpoint | Method | Description |
 |--------|----------|--------|-------------|
@@ -355,7 +355,7 @@ Instead, provide links to official documentation where code examples can be foun
 
 📚 **API Reference**: See [Official API Reference](link-to-docs)
 
-### Data Extraction Capabilities
+#### Data Extraction Capabilities
 
 **Full Load Support**
 | Object | Supports Full Load | Notes |
@@ -367,7 +367,7 @@ Instead, provide links to official documentation where code examples can be foun
 |--------|--------------|------------|---------------------|
 | (list objects with their cursor fields) |
 
-### Pagination
+#### Pagination
 
 | Property | Value |
 |----------|-------|
@@ -378,13 +378,13 @@ Instead, provide links to official documentation where code examples can be foun
 
 📚 **Pagination Guide**: See [Official Pagination Docs](link-to-docs)
 
-### Rate Limits
+#### Rate Limits
 
 | Limit Type | Value | Scope | Reset Period |
 |------------|-------|-------|--------------|
 | (document all rate limits) |
 
-### Error Codes
+#### Error Codes
 
 | Error Code | HTTP Status | Meaning | Recommended Action |
 |------------|-------------|---------|-------------------|
@@ -392,13 +392,13 @@ Instead, provide links to official documentation where code examples can be foun
 
 📚 **Error Handling Guide**: See [Official Error Reference](link-to-docs)
 
-### Best Practices
+#### Best Practices
 
 1. (Best practice 1)
 2. (Best practice 2)
 3. (Best practice 3)
 
-### Troubleshooting
+#### Troubleshooting
 
 | Issue | Possible Cause | Resolution |
 |-------|----------------|------------|
@@ -406,9 +406,8 @@ Instead, provide links to official documentation where code examples can be foun
 | (common issue 2) | (cause) | (resolution) |
 
 📚 **Troubleshooting Guide**: See [Official Support Docs](link-to-docs)
-3. (Tip 3)
 
-### Pros & Cons Summary
+#### Pros & Cons Summary
 | Pros | Cons |
 |------|------|
 | (advantage 1) | (disadvantage 1) |
@@ -439,29 +438,29 @@ This is essential - missing a method will result in incomplete research.
 
 For EACH method below, research thoroughly and state clearly: "✓ Available" or "✗ Not Available"
 
-## Methods to Investigate:
+**Methods to Investigate:**
 
-### 1. REST API
+#### 1. REST API
 Research: Does {connector} have a REST API?
 - If YES: State "✓ Available", provide base URL (e.g., https://api.example.com/v1/), API version, documentation link
 - If NO: State "✗ Not Available"
 
-### 2. GraphQL API  
+#### 2. GraphQL API  
 Research: Does {connector} have a GraphQL API? (Many modern platforms like Shopify, GitHub prioritize GraphQL)
 - If YES: State "✓ Available", provide endpoint URL, mention if it's the primary/recommended API
 - If NO: State "✗ Not Available"
 
-### 3. Webhooks
+#### 3. Webhooks
 Research: Does {connector} support webhooks for real-time event notifications?
 - If YES: State "✓ Available", list key event types supported
 - If NO: State "✗ Not Available"
 
-### 4. Bulk/Batch API
+#### 4. Bulk/Batch API
 Research: Does {connector} have bulk data export, async jobs, or batch operations?
 - If YES: State "✓ Available", explain how it works (e.g., Shopify uses GraphQL Bulk Operations)
 - If NO: State "✗ Not Available"
 
-### 5. Official SDK/Client Libraries
+#### 5. Official SDK/Client Libraries
 Research: Does {connector} provide official SDKs or client libraries?
 - If YES: State "✓ Available", list languages (Python, Node.js, Ruby, Java, etc.)
 - If NO: State "✗ Not Available"
@@ -474,22 +473,22 @@ Since Hevo uses Java, prioritize finding Java SDKs:
 4. If no Java SDK exists, explicitly state: "No Java SDK - use REST API with HTTP client (e.g., OkHttp, HttpClient)"
 5. Note any alternative JVM languages supported (Kotlin, Scala)
 
-### 6. SOAP/XML API
+#### 6. SOAP/XML API
 Research: Does {connector} have a SOAP or XML-based API?
 - If YES: State "✓ Available", provide WSDL location
 - If NO: State "✗ Not Available"
 
-### 7. JDBC/ODBC
+#### 7. JDBC/ODBC
 Research: Does {connector} support direct database connections?
 - If YES: State "✓ Available", specify driver details
 - If NO: State "✗ Not Available"
 
-### 8. File Export
+#### 8. File Export
 Research: Does {connector} support data export to files (CSV, JSON)?
 - If YES: State "✓ Available", specify if manual or API-triggered
 - If NO: State "✗ Not Available"
 
-## REQUIRED: Summary Table
+**REQUIRED: Summary Table**
 Create this exact table with Yes or No in the Available column:
 
 | Method | Available | Endpoint/URL | Documentation | Best Use Case |
@@ -589,14 +588,14 @@ FINAL_SECTIONS = [
     
     ResearchSection(202, "Fivetran Parity Analysis", 4, "Implementation Guide", [
         "Document how Fivetran implements the {connector} connector based on Fivetran documentation.",
-        "## Fivetran Implementation Overview",
+        "**Fivetran Implementation Overview**",
         "Document Fivetran's authentication approach for {connector}",
         "Document Fivetran's extraction methods and API endpoints used",
         "List all objects/tables that Fivetran supports for {connector}",
         "Document Fivetran's sync strategies (full load, incremental, CDC)",
         "Document Fivetran's delete detection approach",
         "Document Fivetran's rate limiting and error handling strategies",
-        "## Hevo Comparison (if Hevo connector code provided)",
+        "**Hevo Comparison** (if Hevo connector code provided)",
         "[IF HEVO] Compare Fivetran's approach with Hevo's implementation",
         "[IF HEVO] Create comparison table: Fivetran vs Hevo (Objects, Auth, Extraction, Sync, Deletes)",
         "[IF HEVO] Highlight similarities and differences in object support",
@@ -622,12 +621,12 @@ FINAL_SECTIONS = [
     ResearchSection(205, "Engineering Cost Analysis", 4, "Implementation Guide", [
         """Analyze the engineering cost and implementation complexity for {connector}:
 
-### Extraction Method Complexity Matrix
+#### Extraction Method Complexity Matrix
 | Method | Implementation Effort | Maintenance Burden | Risk Factors | Recommendation |
 |--------|---------------------|-------------------|--------------|----------------|
 | (For each discovered method, assess complexity) |
 
-### Complexity Factors
+#### Complexity Factors
 - **Undocumented APIs**: Methods that lack official documentation
 - **Frequent Breaking Changes**: APIs that change frequently
 - **Rate Limit Complexity**: Complex rate limiting schemes
@@ -635,17 +634,17 @@ FINAL_SECTIONS = [
 - **Data Volume Challenges**: Methods that struggle at scale
 - **Error Handling Complexity**: Unpredictable error patterns
 
-### High-Maintenance Endpoints
+#### High-Maintenance Endpoints
 | Endpoint | Reason | Mitigation Strategy |
 |----------|--------|-------------------|
 | (List endpoints that require frequent updates or monitoring) |
 
-### Implementation Recommendations
+#### Implementation Recommendations
 - **Recommended Methods**: (methods with low complexity, high reliability)
 - **Conditional Methods**: (methods to use only if customer requires specific features)
 - **Avoid Methods**: (methods with high complexity and low value)
 
-### Engineering Cost Summary
+#### Engineering Cost Summary
 Provide overall assessment of connector implementation complexity.
 """
     ], requires_code_analysis=True),
@@ -657,7 +656,7 @@ FUNCTIONAL_SECTIONS = [
     ResearchSection(300, "Data Source Specification", 5, "Core Functional Requirements", [
         """Provide complete data source specification for {connector}:
 
-### Source System Details
+#### Source System Details
 | Property | Value |
 |----------|-------|
 | **System Type** | (SaaS Application / Database / File System / API Gateway) |
@@ -666,7 +665,7 @@ FUNCTIONAL_SECTIONS = [
 | **Supported Protocols** | (HTTPS, JDBC, ODBC, etc.) |
 | **Data Formats** | (JSON, XML, CSV, Parquet, etc.) |
 
-### Connection Requirements
+#### Connection Requirements
 | Requirement | Details |
 |-------------|---------|
 | **Authentication** | (OAuth 2.0, API Key, Basic Auth, Certificate) |
@@ -674,7 +673,7 @@ FUNCTIONAL_SECTIONS = [
 | **Firewall Rules** | (Ports, IP ranges to allow) |
 | **SSL/TLS** | (Required? Minimum version?) |
 
-### API Capabilities Matrix
+#### API Capabilities Matrix
 | Capability | Supported | Notes |
 |------------|-----------|-------|
 | REST API | Yes/No | |
@@ -689,29 +688,29 @@ FUNCTIONAL_SECTIONS = [
     ResearchSection(301, "Extraction Method Selection", 5, "Core Functional Requirements", [
         """Create an extraction method selection guide for {connector}:
 
-### Extraction Methods Decision Matrix
+#### Extraction Methods Decision Matrix
 | Object | Full Load | Incremental | CDC | Recommended | Reason |
 |--------|-----------|-------------|-----|-------------|--------|
 | (For each major object, specify which methods are supported and recommended) |
 
-### Full Extraction Strategy
+#### Full Extraction Strategy
 - **When to use**: Initial load, data reconciliation, small tables
 - **Implementation**: Query all records without filters
 - **Considerations**: Volume limits, API quotas, network bandwidth
 
-### Incremental Extraction Strategy  
+#### Incremental Extraction Strategy  
 - **When to use**: Regular syncs, large tables, frequent updates
 - **Cursor Fields**: List available cursor fields per object (updated_at, modified_date, etc.)
 - **Window Strategy**: Time-based vs ID-based windowing
 - **Gap Handling**: How to handle missed windows or failures
 
-### Source-Driven Notification (CDC/Webhooks)
+#### Source-Driven Notification (CDC/Webhooks)
 - **Available Events**: List webhook events or CDC streams available
 - **Event Payload**: What data is included in notifications
 - **Ordering Guarantees**: Are events ordered? How to handle out-of-order?
 - **Replay Capability**: Can missed events be replayed?
 
-### Hybrid Approach Recommendation
+#### Hybrid Approach Recommendation
 Describe the optimal combination of methods for production use.
 """
     ]),
@@ -719,19 +718,19 @@ Describe the optimal combination of methods for production use.
     ResearchSection(302, "Transformation & Cleansing Rules", 5, "Core Functional Requirements", [
         """Define transformation and cleansing rules for {connector} data:
 
-### Field Mapping Standards
+#### Field Mapping Standards
 | Source Field | Target Field | Transformation | Example |
 |--------------|--------------|----------------|---------|
 | (Document key field mappings with any transformations needed) |
 
-### Data Type Conversions
+#### Data Type Conversions
 | Source Type | Target Type | Conversion Rule | Edge Cases |
 |-------------|-------------|-----------------|------------|
 | datetime (ISO 8601) | timestamp | Parse with timezone | Null handling |
 | decimal string | numeric | Cast with precision | Overflow handling |
 | nested JSON | flattened columns | Dot notation | Array handling |
 
-### Cleansing Rules
+#### Cleansing Rules
 | Rule | Description | Implementation |
 |------|-------------|----------------|
 | **Null Handling** | How to handle NULL/missing values | (Default value, skip, flag) |
@@ -739,7 +738,7 @@ Describe the optimal combination of methods for production use.
 | **Invalid Data** | Handle data outside valid ranges | (Reject, correct, flag) |
 | **Encoding** | Character encoding standardization | (UTF-8 normalization) |
 
-### Calculated Fields
+#### Calculated Fields
 | Field | Formula | Dependencies | Update Frequency |
 |-------|---------|--------------|------------------|
 | (Define any derived/calculated fields needed) |
@@ -749,22 +748,22 @@ Describe the optimal combination of methods for production use.
     ResearchSection(303, "Data Validation Framework", 5, "Core Functional Requirements", [
         """Create a data validation framework for {connector}:
 
-### Schema Validation Rules
+#### Schema Validation Rules
 | Object | Field | Type | Required | Constraints | Validation Code |
 |--------|-------|------|----------|-------------|-----------------|
 | (Define validation rules for key fields) |
 
-### Business Rule Validations
+#### Business Rule Validations
 | Rule ID | Description | Severity | Action on Failure |
 |---------|-------------|----------|-------------------|
 | BV001 | (Business validation rule) | Error/Warning | Reject/Flag/Log |
 
-### Referential Integrity Checks
+#### Referential Integrity Checks
 | Parent Object | Child Object | Foreign Key | On Violation |
 |---------------|--------------|-------------|--------------|
 | (Define parent-child integrity rules) |
 
-### Data Quality Metrics
+#### Data Quality Metrics
 | Metric | Formula | Threshold | Alert Level |
 |--------|---------|-----------|-------------|
 | **Completeness** | Non-null count / Total count | > 95% | Warning < 90% |
@@ -772,7 +771,7 @@ Describe the optimal combination of methods for production use.
 | **Timeliness** | Records within SLA / Total | > 99% | Error < 95% |
 | **Consistency** | Matching records / Total | 100% | Error < 100% |
 
-### Validation Resources
+#### Validation Resources
 
 | Topic | Documentation Link |
 |-------|-------------------|
@@ -784,7 +783,7 @@ Describe the optimal combination of methods for production use.
     ResearchSection(304, "Loading Strategy Decision Tree", 5, "Core Functional Requirements", [
         """Define loading strategies for {connector} data:
 
-### Loading Mode Selection
+#### Loading Mode Selection
 | Scenario | Loading Mode | Description |
 |----------|--------------|-------------|
 | Initial Load | Full Overwrite | Replace all target data |
@@ -792,14 +791,14 @@ Describe the optimal combination of methods for production use.
 | Updates Detected | Upsert (Merge) | Insert or update based on key |
 | SCD Required | Type 2 History | Maintain historical versions |
 
-### Target System Considerations
+#### Target System Considerations
 | Target Type | Recommended Strategy | Batch Size | Parallelism |
 |-------------|---------------------|------------|-------------|
 | Data Warehouse | Bulk Insert | 10,000-100,000 | 4-8 threads |
 | Data Lake | Partitioned Write | By date/key | Parallel partitions |
 | Database | Batch Upsert | 1,000-5,000 | 2-4 connections |
 
-### Merge/Upsert Logic
+#### Merge/Upsert Logic
 
 | Target System | Merge Strategy | Documentation |
 |---------------|---------------|---------------|
@@ -807,14 +806,14 @@ Describe the optimal combination of methods for production use.
 | BigQuery | MERGE | [BigQuery MERGE Docs](link) |
 | Redshift | MERGE | [Redshift MERGE Docs](link) |
 
-### Slowly Changing Dimensions (SCD)
+#### Slowly Changing Dimensions (SCD)
 | SCD Type | Use Case | Implementation |
 |----------|----------|----------------|
 | Type 1 | Overwrite old values | UPDATE existing rows |
 | Type 2 | Keep history | Add new row, close old |
 | Type 3 | Limited history | Add previous value column |
 
-### Loading Sequence (Dependency Order)
+#### Loading Sequence (Dependency Order)
 1. (List objects in correct loading order based on dependencies)
 """
     ]),
@@ -826,13 +825,13 @@ OPERATIONAL_SECTIONS = [
     ResearchSection(400, "Connectivity Runbook", 6, "Technical Operations", [
         """Create a step-by-step connectivity guide for {connector}:
 
-### Prerequisites Checklist
+#### Prerequisites Checklist
 - [ ] Admin access to {connector} account
 - [ ] Network access to API endpoints verified
 - [ ] Required permissions/scopes identified
 - [ ] Development/sandbox environment available
 
-### Step 1: Network Connectivity Verification
+#### Step 1: Network Connectivity Verification
 
 | Check | Expected Result | Documentation |
 |-------|-----------------|---------------|
@@ -840,7 +839,7 @@ OPERATIONAL_SECTIONS = [
 | SSL certificate valid | Valid cert chain | |
 | IP whitelist configured | Connection accepted | |
 
-### Step 2: Application Registration
+#### Step 2: Application Registration
 
 | Step | Action | Portal Location |
 |------|--------|-----------------|
@@ -849,7 +848,7 @@ OPERATIONAL_SECTIONS = [
 | 3 | Configure OAuth settings | [OAuth Setup](link) |
 | 4 | Obtain credentials | API Keys page |
 
-### Step 3: Required Credentials
+#### Step 3: Required Credentials
 
 | Credential | Description | Where to Find |
 |------------|-------------|---------------|
@@ -859,13 +858,13 @@ OPERATIONAL_SECTIONS = [
 
 📚 **Authentication Guide**: See [Official Auth Documentation](link)
 
-### Step 4: Permissions Required
+#### Step 4: Permissions Required
 
 | Permission/Scope | Purpose | Required For |
 |-----------------|---------|--------------|
 | (list all required permissions) | | |
 
-### Troubleshooting Guide
+#### Troubleshooting Guide
 | Symptom | Possible Cause | Resolution | Documentation |
 |---------|----------------|------------|---------------|
 | Connection timeout | Firewall blocking | Whitelist IPs | [Network Guide](link) |
@@ -879,12 +878,12 @@ OPERATIONAL_SECTIONS = [
     ResearchSection(401, "Volume & Performance Guide", 6, "Technical Operations", [
         """Create volume and performance guidelines for {connector}:
 
-### Expected Data Volumes
+#### Expected Data Volumes
 | Object | Typical Record Count | Record Size | Daily Change Rate |
 |--------|---------------------|-------------|-------------------|
 | (Estimate volumes for key objects) |
 
-### Performance Benchmarks
+#### Performance Benchmarks
 | Operation | Expected Throughput | Latency Target | Notes |
 |-----------|--------------------|-----------------| ------|
 | List objects | X records/second | < 500ms | With pagination |
@@ -892,21 +891,21 @@ OPERATIONAL_SECTIONS = [
 | Bulk export | X records/minute | N/A | Async job |
 | Webhook delivery | Real-time | < 5 seconds | Event to receipt |
 
-### Batch Size Recommendations
+#### Batch Size Recommendations
 | API Type | Recommended Batch | Max Batch | Reason |
 |----------|-------------------|-----------|--------|
 | REST List | 100-250 | 1000 | Balance throughput vs memory |
 | Bulk API | 10,000 | 100,000 | Job processing time |
 | Webhook | N/A | N/A | Event-driven |
 
-### Scheduling Recommendations
+#### Scheduling Recommendations
 | Sync Type | Frequency | Window | Rationale |
 |-----------|-----------|--------|-----------|
 | Full Load | Weekly | Off-peak hours | High volume, low frequency |
 | Incremental | Every 15-60 min | Continuous | Near real-time updates |
 | CDC/Webhooks | Real-time | Continuous | Immediate consistency |
 
-### Scalability Considerations
+#### Scalability Considerations
 - **Horizontal Scaling**: Can run multiple extractors in parallel?
 - **Rate Limit Sharing**: How are limits shared across instances?
 - **Connection Pooling**: Recommended pool size and timeout settings
@@ -916,7 +915,7 @@ OPERATIONAL_SECTIONS = [
     ResearchSection(402, "Error Handling Procedures", 6, "Technical Operations", [
         """Create error handling procedures for {connector}:
 
-### Error Classification
+#### Error Classification
 | Error Category | HTTP Codes | Retryable | Max Retries | Backoff |
 |----------------|------------|-----------|-------------|---------|
 | Client Error | 400, 404 | No | 0 | N/A |
@@ -925,7 +924,7 @@ OPERATIONAL_SECTIONS = [
 | Server Error | 500, 502, 503 | Yes | 3 | Exponential |
 | Timeout | N/A | Yes | 3 | Linear increase |
 
-### Error Response Parsing
+#### Error Response Parsing
 
 | Field | Location | Example Value |
 |-------|----------|---------------|
@@ -936,7 +935,7 @@ OPERATIONAL_SECTIONS = [
 
 📚 **Error Handling Guide**: See [Official Error Documentation](link)
 
-### Recovery Procedures
+#### Recovery Procedures
 | Failure Scenario | Detection | Recovery Action | Escalation |
 |------------------|-----------|-----------------|------------|
 | Auth token expired | 401 response | Refresh token | Alert if refresh fails |
@@ -944,7 +943,7 @@ OPERATIONAL_SECTIONS = [
 | API unavailable | 503 / timeout | Retry with backoff | Page on-call after 5 min |
 | Data corruption | Validation failure | Quarantine record | Manual review |
 
-### Alerting Rules
+#### Alerting Rules
 | Alert | Condition | Severity | Response Time |
 |-------|-----------|----------|---------------|
 | Sync Failed | 3 consecutive failures | High | 15 minutes |
@@ -956,7 +955,7 @@ OPERATIONAL_SECTIONS = [
     ResearchSection(403, "Monitoring & Alerting Setup", 6, "Technical Operations", [
         """Create monitoring and alerting configuration for {connector}:
 
-### Key Metrics to Track
+#### Key Metrics to Track
 | Metric | Description | Collection Method | Granularity |
 |--------|-------------|-------------------|-------------|
 | **records_extracted** | Total records pulled | Counter | Per sync |
@@ -966,13 +965,13 @@ OPERATIONAL_SECTIONS = [
 | **rate_limit_hits** | Times rate limited | Counter | Continuous |
 | **data_freshness_seconds** | Age of newest record | Gauge | Per object |
 
-### Dashboard Panels
+#### Dashboard Panels
 1. **Sync Overview**: Success rate, records/hour, active syncs
 2. **API Health**: Request rate, error rate, latency percentiles
 3. **Data Quality**: Validation pass rate, null rates, schema drift
 4. **Resource Usage**: Memory, CPU, connections, queue depth
 
-### Alert Definitions
+#### Alert Definitions
 | Alert Name | Condition | Severity | Notification |
 |------------|-----------|----------|--------------|
 | SyncFailed | sync_status = failed for > 5 min | P1 | PagerDuty |
@@ -980,7 +979,7 @@ OPERATIONAL_SECTIONS = [
 | DataStale | freshness > 2 hours | P2 | Slack |
 | RateLimitCritical | rate_limit_hits > 100/min | P3 | Email |
 
-### Monitoring Resources
+#### Monitoring Resources
 
 | Tool | Use Case | Documentation |
 |------|----------|---------------|
@@ -995,12 +994,12 @@ OPERATIONAL_SECTIONS = [
     ResearchSection(404, "Audit & Compliance Requirements", 6, "Technical Operations", [
         """Create audit and compliance documentation for {connector}:
 
-### Data Lineage Tracking
+#### Data Lineage Tracking
 | Field | Source | Transformation | Target | Timestamp |
 |-------|--------|----------------|--------|-----------|
 | (Document data lineage for key fields) |
 
-### Audit Log Schema
+#### Audit Log Schema
 
 | Field | Type | Description |
 |-------|------|-------------|
@@ -1017,7 +1016,7 @@ OPERATIONAL_SECTIONS = [
 | source_system | string | Source connector |
 | target_system | string | Destination system |
 
-### Compliance Checklist
+#### Compliance Checklist
 | Requirement | Implementation | Verification |
 |-------------|----------------|--------------|
 | **Data Encryption** | TLS 1.2+ in transit, AES-256 at rest | Certificate check |
@@ -1026,12 +1025,12 @@ OPERATIONAL_SECTIONS = [
 | **Data Retention** | Logs retained for X days | Retention policy |
 | **PII Handling** | Masked/tokenized in logs | Log sampling |
 
-### Data Classification
+#### Data Classification
 | Object | Contains PII | Contains Financial | Sensitivity | Handling |
 |--------|-------------|-------------------|-------------|----------|
 | (Classify each object by data sensitivity) |
 
-### Retention & Purging
+#### Retention & Purging
 | Data Type | Retention Period | Purge Method | Compliance Reason |
 |-----------|------------------|--------------|-------------------|
 | Raw extraction logs | 90 days | Auto-delete | Storage cost |
@@ -1519,7 +1518,7 @@ class ResearchAgent:
 | | Domain Expert | | |
 | | Security Review | | |
 
-### Review Summary
+#### Review Summary
 
 **Overall Assessment:** ⬜ Approved ⬜ Approved with Changes ⬜ Needs Revision
 
@@ -1674,13 +1673,13 @@ class ResearchAgent:
             # Add parity score and gap analysis if we have implementation data
             if parity_info:
                 summary_parts.append(f"""
-### Parity Score
+#### Parity Score
 
 | | |
 |---|---|
 | **Score** | **{parity_info['parity_percentage']}%** ({parity_info['common_count']}/{parity_info['fivetran_total']} objects) |
 
-### Gap Analysis
+#### Gap Analysis
 
 **Objects we have that Fivetran doesn't ({parity_info['extra_count']}):**
 """)
@@ -2629,19 +2628,19 @@ Web Search Results:
 
 OUTPUT FORMAT REQUIRED:
 
-### 19.1 Object Catalog Table
+#### 19.1 Object Catalog Table
 
 | Object | Extraction Method | Primary Key | Cursor Field | Parent | Permissions | Delete Method | Fivetran Support |
 |--------|-------------------|-------------|--------------|--------|-------------|---------------|------------------|
 | (list all objects here - include Delete Method for each: Soft Delete (field), Deleted Endpoint, Webhook (event), Audit Log, or None) |
 
-### 19.2 Replication Strategy Notes
+#### 19.2 Replication Strategy Notes
 
 **Full Load Objects:** (list objects with no cursor field)
 **Incremental Objects:** (list objects with cursor fields)
 **CDC-Capable Objects:** (list objects with real-time change tracking if any)
 
-### 19.3 Delete Detection Summary
+#### 19.3 Delete Detection Summary
 
 **Soft Delete:** (list objects with soft delete flag - specify field name)
 **Deleted Endpoint:** (list objects with dedicated deleted records endpoint)
@@ -2649,7 +2648,7 @@ OUTPUT FORMAT REQUIRED:
 **Audit Log:** (list objects tracked via audit log)
 **No Delete Detection:** (list objects with hard deletes only)
 
-### 19.4 Documentation Links
+#### 19.4 Documentation Links
 
 | Topic | Official Documentation |
 |-------|----------------------|
@@ -2658,7 +2657,7 @@ OUTPUT FORMAT REQUIRED:
 | Pagination Guide | [Link to pagination docs] |
 | Code Examples | [Link to official code samples] |
 
-### 19.5 Volume Considerations
+#### 19.5 Volume Considerations
 
 (Rate limits, pagination limits, high-volume object notes)
 """
@@ -2730,13 +2729,14 @@ Instead, provide links like: 📚 **Code Examples**: See [Official Docs](url)
             phase_emoji = phase_emojis.get(section.phase, "📄")
             
             # Format as markdown section with improved layout
+            # Hierarchy: H1=Doc title, H2=Phase, H3=Section, H4+=Content
             formatted = f"""
 
 ---
 
-# {phase_emoji} Phase {section.phase}: {section.phase_name}
+## {phase_emoji} Phase {section.phase}: {section.phase_name}
 
-## {section.number}. {section.name}
+### {section.number}. {section.name}
 
 {content}
 
@@ -2761,7 +2761,7 @@ Instead, provide links like: 📚 **Code Examples**: See [Official Docs](url)
 
 ---
 
-## {section.number}. {section.name}
+### {section.number}. {section.name}
 
 **Error generating section:** {str(e)}
 
@@ -2981,13 +2981,14 @@ Generate comprehensive markdown content for this section with PROPER CITATIONS.
             phase_emoji = phase_emojis.get(section.phase, "📄")
             
             # Format as markdown section
+            # Hierarchy: H1=Doc title, H2=Phase, H3=Section, H4+=Content
             formatted = f"""
 
 ---
 
-# {phase_emoji} Phase {section.phase}: {section.phase_name}
+## {phase_emoji} Phase {section.phase}: {section.phase_name}
 
-## {section.number}. {section.name}
+### {section.number}. {section.name}
 
 {content}
 
@@ -3013,7 +3014,7 @@ Generate comprehensive markdown content for this section with PROPER CITATIONS.
 
 ---
 
-## {section.number}. {section.name}
+### {section.number}. {section.name}
 
 **Error regenerating section:** {str(e)}
 
