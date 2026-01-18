@@ -913,6 +913,25 @@ async def generate_research(
                     research_content=research_content
                 )
             
+            # Ensure final progress is persisted (mark all sections complete)
+            if progress and progress.total_sections > 0:
+                # Mark all sections as completed
+                for section_num in range(1, progress.total_sections + 1):
+                    if section_num not in progress.sections_completed:
+                        progress.sections_completed.append(section_num)
+                progress.sections_completed.sort()
+                
+                # Update progress with final state
+                connector_manager.update_progress(
+                    connector_id,
+                    section=progress.total_sections,
+                    section_name="Complete",
+                    completed=True,
+                    total_sections=progress.total_sections,
+                    discovered_methods=progress.discovered_methods,
+                    research_progress=progress
+                )
+            
             # Update connector with final stats
             connector_manager.update_connector(
                 connector_id,

@@ -1361,6 +1361,94 @@ class ResearchAgent:
         
         return metrics
     
+    def _extract_structured_claims(
+        self,
+        content: str,
+        section_number: int,
+        sources: Dict[str, str],
+        evidence_map: Dict[str, Dict[str, Any]]
+    ) -> List[Dict[str, Any]]:
+        """Extract structured claims from section content with evidence mapping.
+        
+        Args:
+            content: The generated section content
+            section_number: Section number for tracking
+            sources: Dict of source contexts (vault, docwhisperer, web, fivetran, github)
+            evidence_map: Current evidence map for citation validation
+            
+        Returns:
+            List of structured claim objects
+        """
+        claims = []
+        
+        # Find all citation tags in the content
+        citation_pattern = r'\[([A-Z0-9_]+(?::[A-Z0-9_]+)?)\]'
+        
+        # Split content into sentences/claims
+        import re
+        sentences = re.split(r'(?<=[.!?])\s+', content)
+        
+        for sentence in sentences:
+            sentence = sentence.strip()
+            if not sentence or len(sentence) < 10:
+                continue
+            
+            # Skip headers, code blocks, etc.
+            if sentence.startswith('#') or sentence.startswith('```') or sentence.startswith('|'):
+                continue
+            
+            # Find citations in this sentence
+            found_citations = re.findall(citation_pattern, sentence)
+            
+            if found_citations:
+                # This is a cited claim
+                for citation in found_citations:
+                    evidence = evidence_map.get(citation, {})
+                    claim = {
+                        "claim_text": re.sub(citation_pattern, '', sentence).strip(),
+                        "section_number": section_number,
+                        "citation_tags": found_citations,
+                        "evidence_ids": [citation],
+                        "confidence": evidence.get("confidence", 0.7) if evidence else 0.5,
+                        "source_type": evidence.get("source_type", "unknown") if evidence else "unknown",
+                        "source_url": evidence.get("url", "") if evidence else "",
+                        "is_assumption": False,
+                        "timestamp": datetime.now().isoformat()
+                    }
+                    claims.append(claim)
+                    break  # One claim per sentence
+            else:
+                # Check if it's a factual claim without citation
+                factual_indicators = [
+                    "supports", "provides", "offers", "includes", "requires",
+                    "uses", "allows", "enables", "implements", "returns",
+                    "accepts", "must", "should", "can", "will"
+                ]
+                is_factual = any(indicator in sentence.lower() for indicator in factual_indicators)
+                
+                # Skip meta-statements and safe statements
+                safe_patterns = [
+                    "unknown", "n/a", "not documented", "requires verification",
+                    "this section", "see", "refer to", "note:"
+                ]
+                is_safe = any(pattern in sentence.lower() for pattern in safe_patterns)
+                
+                if is_factual and not is_safe:
+                    claim = {
+                        "claim_text": sentence,
+                        "section_number": section_number,
+                        "citation_tags": [],
+                        "evidence_ids": [],
+                        "confidence": 0.3,  # Low confidence - no citation
+                        "source_type": "uncited",
+                        "source_url": "",
+                        "is_assumption": True,
+                        "timestamp": datetime.now().isoformat()
+                    }
+                    claims.append(claim)
+        
+        return claims
+    
     def _calculate_parity(self, impl_objects: List[str], fivetran_objects: List[str]) -> Dict[str, Any]:
         """Calculate parity between implementation and Fivetran.
         
