@@ -583,36 +583,55 @@ function researchViewer() {
             // Parse the raw markdown to extract method sections
             const content = this.rawContent;
             
-            // Find method deep dive sections
+            // Find method deep dive sections - canonical names only
             const methodPatterns = [
                 'REST API', 'GraphQL API', 'SOAP/XML API', 'Webhooks',
-                'Bulk/Batch API', 'Official SDK', 'JDBC/ODBC', 'File Export',
+                'Bulk/Batch API', 'Official SDK', 'JDBC/ODBC', 'File Export'
+            ];
+            
+            // Also check for short names that might appear in headers
+            const allPatterns = [
+                ...methodPatterns,
                 'REST', 'GraphQL', 'SOAP', 'Bulk API', 'SDK'
             ];
             
-            methodPatterns.forEach(method => {
+            // Normalize method name to canonical version
+            const normalizeMethod = (method) => {
+                const normalizations = {
+                    'REST': 'REST API',
+                    'GraphQL': 'GraphQL API',
+                    'SOAP': 'SOAP/XML API',
+                    'Bulk API': 'Bulk/Batch API',
+                    'SDK': 'Official SDK'
+                };
+                return normalizations[method] || method;
+            };
+            
+            allPatterns.forEach(method => {
                 // Look for section headers like "## REST API Deep Dive" or "## 4. REST API Deep Dive"
-                const regex = new RegExp(`##\\s*(?:\\d+\\.?\\s*)?${method.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?:\\s+API)?\\s+Deep\\s+Dive([\\s\\S]*?)(?=##\\s*(?:\\d+\\.?\\s*)?(?:${methodPatterns.join('|').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})|##\\s*(?:\\d+\\.?\\s*)?(?:Authentication Comparison|Rate Limiting|Error Handling|Data Model|Delete Detection|Recommended|Object Catalog|Production)|$)`, 'i');
+                const regex = new RegExp(`##\\s*(?:\\d+\\.?\\s*)?${method.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?:\\s+API)?\\s+Deep\\s+Dive([\\s\\S]*?)(?=##\\s*(?:\\d+\\.?\\s*)?(?:${allPatterns.join('|').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})|##\\s*(?:\\d+\\.?\\s*)?(?:Authentication Comparison|Rate Limiting|Error Handling|Data Model|Delete Detection|Recommended|Object Catalog|Production)|$)`, 'i');
                 const match = content.match(regex);
                 
                 if (match && match[1] && match[1].trim().length > 100) {
-                    if (!this.discoveredMethods.includes(method)) {
-                        this.discoveredMethods.push(method);
+                    const normalizedMethod = normalizeMethod(method);
+                    if (!this.discoveredMethods.includes(normalizedMethod)) {
+                        this.discoveredMethods.push(normalizedMethod);
                     }
-                    this.methodSections[method] = this.formatMethodContent(method, match[1]);
+                    this.methodSections[normalizedMethod] = this.formatMethodContent(normalizedMethod, match[1]);
                 }
             });
             
             // If no methods found, check for simpler patterns
             if (this.discoveredMethods.length === 0) {
-                methodPatterns.forEach(method => {
+                allPatterns.forEach(method => {
                     const simpleRegex = new RegExp(`##[^#]*${method.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}[^#]*\\n([\\s\\S]*?)(?=##|$)`, 'i');
                     const match = content.match(simpleRegex);
                     if (match && match[1] && match[1].trim().length > 200) {
-                        if (!this.discoveredMethods.includes(method)) {
-                            this.discoveredMethods.push(method);
+                        const normalizedMethod = normalizeMethod(method);
+                        if (!this.discoveredMethods.includes(normalizedMethod)) {
+                            this.discoveredMethods.push(normalizedMethod);
                         }
-                        this.methodSections[method] = this.formatMethodContent(method, match[1]);
+                        this.methodSections[normalizedMethod] = this.formatMethodContent(normalizedMethod, match[1]);
                     }
                 });
             }
