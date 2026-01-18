@@ -9,7 +9,7 @@ import json
 from pathlib import Path
 from datetime import datetime
 from typing import List, Optional, Dict, Any
-from dataclasses import dataclass, field, asdict
+from dataclasses import dataclass, field, asdict, fields
 from enum import Enum
 
 
@@ -135,6 +135,13 @@ class Connector:
     hevo_github_url: Optional[str] = None  # Optional Hevo connector GitHub URL for comparison
     description: str = ""
     
+    # Official Documentation Pre-crawl
+    official_doc_urls: Optional[List[str]] = None
+    doc_crawl_status: str = "pending"
+    doc_crawl_urls: Optional[List[str]] = None
+    doc_crawl_pages: int = 0
+    doc_crawl_words: int = 0
+    
     # Fivetran parity URLs
     fivetran_urls: Optional[FivetranUrls] = None
     
@@ -184,6 +191,9 @@ class Connector:
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'Connector':
         """Create from dictionary."""
+        # Make a copy to avoid modifying the original
+        data = data.copy()
+        
         # Handle progress
         progress_data = data.pop('progress', {})
         if isinstance(progress_data, dict):
@@ -199,7 +209,11 @@ class Connector:
         manual_input_data = data.pop('manual_input', None)
         manual_input = ManualInput.from_dict(manual_input_data) if manual_input_data else None
         
-        return cls(progress=progress, fivetran_urls=fivetran_urls, manual_input=manual_input, **data)
+        # Filter out any unknown fields that aren't in the dataclass
+        known_fields = {f.name for f in fields(cls)}
+        filtered_data = {k: v for k, v in data.items() if k in known_fields}
+        
+        return cls(progress=progress, fivetran_urls=fivetran_urls, manual_input=manual_input, **filtered_data)
 
 
 class ConnectorManager:
