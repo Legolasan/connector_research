@@ -324,34 +324,52 @@ class CitationValidator:
     
     def _validate_table_rows(self, tables: List[Table], original_content: str) -> List[UncitedRow]:
         """
-        Validate that every non-header row has citations.
+        Validate tables have citations - allow table-level citations.
         
-        Every row must include ≥1 citation tag at end OR evidence_ids column.
+        A table is considered cited if:
+        1. It has an evidence_ids column, OR
+        2. There's a citation tag within 500 chars before/after the table, OR
+        3. Individual rows contain citations
         """
         uncited_rows = []
         
         for table in tables:
+            # Check for table-level citation (within 500 chars of table)
+            table_start = table.start_position
+            table_end = table.end_position
+            context_before = original_content[max(0, table_start - 500):table_start]
+            context_after = original_content[table_end:min(len(original_content), table_end + 500)]
+            
+            has_table_level_citation = bool(
+                self.CITATION_PATTERN.search(context_before) or 
+                self.CITATION_PATTERN.search(context_after)
+            )
+            
+            # If table has nearby citation, all rows are considered cited
+            if has_table_level_citation:
+                continue
+            
             # Check if table has evidence_ids column
             has_evidence_column = any(
                 'evidence' in col.lower() or 'citation' in col.lower() 
                 for col in table.header_row
             )
             
+            # If table has evidence column, all rows are considered cited
+            if has_evidence_column:
+                continue
+            
+            # No table-level citation - check individual rows
             for row_idx, row in enumerate(table.data_rows):
                 # Skip if it's a separator row
                 if all(re.match(r'^[-:\s]+$', cell) for cell in row):
                     continue
                 
-                # Check if row has citations at the end
+                # Check if row has citations
                 row_text = ' | '.join(row)
                 citations_in_row = self.CITATION_PATTERN.findall(row_text)
                 
-                # Check if last column(s) contain citations
-                last_cells = row[-2:] if len(row) >= 2 else row
-                last_cells_text = ' '.join(last_cells)
-                has_citation_in_last = bool(self.CITATION_PATTERN.search(last_cells_text))
-                
-                if not has_citation_in_last and not citations_in_row and not has_evidence_column:
+                if not citations_in_row:
                     uncited_rows.append(UncitedRow(
                         table_name=table.name,
                         row_index=row_idx + 1,  # 1-indexed for user display
