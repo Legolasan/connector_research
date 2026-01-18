@@ -46,6 +46,13 @@ class ConnectorModel(Base):
     hevo_github_url = Column(String(500), nullable=True)  # Optional Hevo connector GitHub URL
     description = Column(Text, default="")
     
+    # Official Documentation Pre-crawl
+    official_doc_urls = Column(JSON, nullable=True)  # User-provided doc URLs
+    doc_crawl_status = Column(String(50), default="pending")  # pending, crawling, indexed, failed
+    doc_crawl_urls = Column(JSON, nullable=True)  # URLs that were actually crawled
+    doc_crawl_pages = Column(Integer, default=0)  # Number of pages crawled
+    doc_crawl_words = Column(Integer, default=0)  # Total words indexed
+    
     # Fivetran URLs stored as JSON
     fivetran_urls = Column(JSON, nullable=True)
     
@@ -76,7 +83,13 @@ class ConnectorModel(Base):
             'connector_type': self.connector_type,
             'status': self.status,
             'github_url': self.github_url,
+            'hevo_github_url': self.hevo_github_url,
             'description': self.description,
+            'official_doc_urls': self.official_doc_urls,
+            'doc_crawl_status': self.doc_crawl_status,
+            'doc_crawl_urls': self.doc_crawl_urls,
+            'doc_crawl_pages': self.doc_crawl_pages,
+            'doc_crawl_words': self.doc_crawl_words,
             'fivetran_urls': self.fivetran_urls,
             'objects_count': self.objects_count,
             'vectors_count': self.vectors_count,
@@ -243,6 +256,29 @@ def init_database() -> bool:
                             conn.commit()
                             print("✓ Added hevo_github_url column")
                         
+                        # Check and add doc_crawl columns to connectors
+                        doc_crawl_columns = [
+                            ("official_doc_urls", "JSONB"),
+                            ("doc_crawl_status", "VARCHAR(50) DEFAULT 'pending'"),
+                            ("doc_crawl_urls", "JSONB"),
+                            ("doc_crawl_pages", "INTEGER DEFAULT 0"),
+                            ("doc_crawl_words", "INTEGER DEFAULT 0"),
+                        ]
+                        
+                        for col_name, col_type in doc_crawl_columns:
+                            col_exists = conn.execute(text(f"""
+                                SELECT EXISTS (
+                                    SELECT FROM information_schema.columns 
+                                    WHERE table_name = 'connectors' AND column_name = '{col_name}'
+                                )
+                            """)).scalar()
+                            
+                            if not col_exists:
+                                print(f"⚠ Adding missing column: connectors.{col_name}")
+                                conn.execute(text(f"ALTER TABLE connectors ADD COLUMN {col_name} {col_type}"))
+                                conn.commit()
+                                print(f"✓ Added {col_name} column")
+                        
                         # Check and add claim graph columns to research_documents
                         claim_graph_columns = [
                             ("citation_report_json", "JSONB"),
@@ -345,6 +381,11 @@ class DatabaseConnectorStorage:
                 github_url=connector_data.get('github_url'),
                 hevo_github_url=connector_data.get('hevo_github_url'),
                 description=connector_data.get('description', ''),
+                official_doc_urls=connector_data.get('official_doc_urls'),
+                doc_crawl_status=connector_data.get('doc_crawl_status', 'pending'),
+                doc_crawl_urls=connector_data.get('doc_crawl_urls'),
+                doc_crawl_pages=connector_data.get('doc_crawl_pages', 0),
+                doc_crawl_words=connector_data.get('doc_crawl_words', 0),
                 fivetran_urls=connector_data.get('fivetran_urls'),
                 objects_count=connector_data.get('objects_count', 0),
                 vectors_count=connector_data.get('vectors_count', 0),

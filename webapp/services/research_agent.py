@@ -2435,17 +2435,35 @@ Confidence: {whisper.confidence}%
                     confidence=whisper.confidence / 100.0 if whisper.confidence else 0.9
                 )
         
-        # 🔍 STEP 3: Fall back to web search for additional context
+        # 🔍 STEP 3: Web search - SKIP if vault has high-quality results
         # Use section-specific search queries for better results
-        search_queries = self._get_section_search_queries(connector_name, section.name)
         
-        all_web_results = []
-        for query in search_queries[:2]:  # Limit to 2 queries per section
-            result = await self._web_search(query, connector_name=connector_name)
-            if result and "No results" not in result and "error" not in result.lower():
-                all_web_results.append(result)
+        # Calculate vault quality score (average confidence)
+        vault_quality = 0.0
+        if vault_results:
+            vault_quality = sum(r.score for r in vault_results) / len(vault_results)
         
-        web_results = "\n\n".join(all_web_results) if all_web_results else "No results found"
+        web_results = ""
+        skip_web_search = False
+        
+        # Skip web search if:
+        # 1. Knowledge Vault has good results (avg score > 0.7) AND
+        # 2. We have DocWhisperer results
+        if vault_quality > 0.7 and docwhisperer_context:
+            skip_web_search = True
+            web_results = "*Web search skipped - high-quality pre-indexed documentation available*"
+            print(f"  ⏭️  Skipping web search - vault quality: {vault_quality:.2f}")
+        
+        if not skip_web_search:
+            search_queries = self._get_section_search_queries(connector_name, section.name)
+            
+            all_web_results = []
+            for query in search_queries[:2]:  # Limit to 2 queries per section
+                result = await self._web_search(query, connector_name=connector_name)
+                if result and "No results" not in result and "error" not in result.lower():
+                    all_web_results.append(result)
+            
+            web_results = "\n\n".join(all_web_results) if all_web_results else "No results found"
         
         # Combine all context sources
         if all_context_parts:

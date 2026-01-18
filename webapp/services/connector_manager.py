@@ -311,6 +311,7 @@ class ConnectorManager:
         connector_type: str,
         github_url: Optional[str] = None,
         hevo_github_url: Optional[str] = None,
+        official_doc_urls: Optional[List[str]] = None,
         fivetran_urls: Optional[FivetranUrls] = None,
         description: str = "",
         manual_text: Optional[str] = None,
@@ -346,6 +347,8 @@ class ConnectorManager:
             'status': ConnectorStatus.NOT_STARTED.value,
             'github_url': github_url,
             'hevo_github_url': hevo_github_url,
+            'official_doc_urls': official_doc_urls,
+            'doc_crawl_status': 'pending',
             'description': description,
             'fivetran_urls': fivetran_urls.to_dict() if fivetran_urls else None,
             'manual_input': manual_input.to_dict() if manual_input else None,
@@ -472,7 +475,8 @@ class ConnectorManager:
         """Update connector properties."""
         allowed_fields = {
             'name', 'description', 'status', 'objects_count', 
-            'vectors_count', 'fivetran_parity', 'sources', 'completed_at'
+            'vectors_count', 'fivetran_parity', 'sources', 'completed_at',
+            'doc_crawl_status', 'doc_crawl_urls', 'doc_crawl_pages', 'doc_crawl_words'
         }
         
         # Filter to allowed fields

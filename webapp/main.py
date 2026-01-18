@@ -33,6 +33,7 @@ from services.research_agent import get_research_agent, ResearchAgent
 from services.vector_manager import get_vector_manager, VectorManager
 from services.fivetran_crawler import get_fivetran_crawler, FivetranCrawler
 from services.knowledge_vault import get_knowledge_vault, KnowledgeVault, KnowledgeSourceType
+from services.doc_crawler import get_doc_crawler, DocCrawler
 from services.security import verify_api_key, InputSanitizer, get_client_ip
 
 
@@ -107,6 +108,7 @@ class ConnectorCreateRequest(BaseModel):
     connector_type: Optional[str] = "auto"  # Auto-discovered during research
     github_url: Optional[str] = None
     hevo_github_url: Optional[str] = None  # Optional Hevo connector GitHub URL for comparison
+    official_doc_urls: Optional[List[str]] = None  # User-provided official documentation URLs for pre-crawl
     fivetran_urls: Optional[FivetranUrlsRequest] = None
     description: str = ""
     manual_text: Optional[str] = None  # Manual object list as text
@@ -194,6 +196,7 @@ research_agent: Optional[ResearchAgent] = None
 vector_manager: Optional[VectorManager] = None
 fivetran_crawler: Optional[FivetranCrawler] = None
 knowledge_vault: Optional[KnowledgeVault] = None
+doc_crawler: Optional[DocCrawler] = None
 
 # Background tasks tracking
 _running_research_tasks: Dict[str, asyncio.Task] = {}
@@ -202,7 +205,7 @@ _running_research_tasks: Dict[str, asyncio.Task] = {}
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Initialize services on startup."""
-    global connector_manager, github_cloner, research_agent, vector_manager, fivetran_crawler, knowledge_vault
+    global connector_manager, github_cloner, research_agent, vector_manager, fivetran_crawler, knowledge_vault, doc_crawler
     
     # Download NLTK data for sentence tokenization (used by citation validator)
     try:
@@ -269,6 +272,13 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         print(f"⚠ Knowledge Vault not available: {e}")
         knowledge_vault = None
+    
+    try:
+        doc_crawler = get_doc_crawler()
+        print("🕷️ Documentation Crawler initialized")
+    except Exception as e:
+        print(f"⚠ Documentation Crawler not available: {e}")
+        doc_crawler = None
     
     yield
     
@@ -533,21 +543,22 @@ async def create_connector(
     try:
         # Convert FivetranUrlsRequest to FivetranUrls if provided
         fivetran_urls = None
-        if request.fivetran_urls:
+        if connector_request.fivetran_urls:
             fivetran_urls = FivetranUrls(
-                setup_guide_url=request.fivetran_urls.setup_guide_url,
-                connector_overview_url=request.fivetran_urls.connector_overview_url,
-                schema_info_url=request.fivetran_urls.schema_info_url
+                setup_guide_url=connector_request.fivetran_urls.setup_guide_url,
+                connector_overview_url=connector_request.fivetran_urls.connector_overview_url,
+                schema_info_url=connector_request.fivetran_urls.schema_info_url
             )
         
         connector = connector_manager.create_connector(
-            name=request.name,
-            connector_type=request.connector_type,
-            github_url=request.github_url,
-            hevo_github_url=request.hevo_github_url,
+            name=connector_request.name,
+            connector_type=connector_request.connector_type,
+            github_url=connector_request.github_url,
+            hevo_github_url=connector_request.hevo_github_url,
+            official_doc_urls=connector_request.official_doc_urls,
             fivetran_urls=fivetran_urls,
-            description=request.description,
-            manual_text=request.manual_text
+            description=connector_request.description,
+            manual_text=connector_request.manual_text
         )
         return _connector_to_response(connector)
     except ValueError as e:
@@ -564,6 +575,7 @@ async def create_connector_with_file(
     connector_type: Optional[str] = Form("auto"),  # Auto-discovered during research
     github_url: Optional[str] = Form(None),
     hevo_github_url: Optional[str] = Form(None),
+    official_doc_urls: Optional[str] = Form(None),  # JSON string of URLs
     fivetran_urls: Optional[str] = Form(None),  # JSON string
     manual_text: Optional[str] = Form(None),
     manual_file: Optional[UploadFile] = File(None),
@@ -584,6 +596,14 @@ async def create_connector_with_file(
                     connector_overview_url=urls_dict.get('connector_overview_url'),
                     schema_info_url=urls_dict.get('schema_info_url')
                 )
+            except json.JSONDecodeError:
+                pass
+        
+        # Parse official_doc_urls from JSON string
+        official_doc_urls_list = None
+        if official_doc_urls:
+            try:
+                official_doc_urls_list = json.loads(official_doc_urls)
             except json.JSONDecodeError:
                 pass
         
@@ -608,6 +628,7 @@ async def create_connector_with_file(
             connector_type=connector_type,
             github_url=github_url,
             hevo_github_url=hevo_github_url,
+            official_doc_urls=official_doc_urls_list,
             fivetran_urls=fivetran_urls_obj,
             description="",
             manual_text=manual_text,
@@ -729,6 +750,51 @@ async def generate_research(
                     print(f"✓ Hevo repository analyzed successfully")
                 else:
                     print(f"⚠ Hevo repository cloning skipped, continuing without Hevo comparison")
+            
+            # Pre-crawl official documentation and index into Knowledge Vault
+            if doc_crawler and knowledge_vault:
+                try:
+                    # Get user-provided URLs or use registry/auto-discovery
+                    user_doc_urls = getattr(connector, 'official_doc_urls', None)
+                    
+                    print(f"📚 Pre-crawling official documentation for {connector.name}...")
+                    connector_manager.update_connector(
+                        connector_id, 
+                        status="crawling_docs"
+                    )
+                    
+                    crawl_result = await doc_crawler.crawl_official_docs(
+                        connector_name=connector.name,
+                        user_provided_urls=user_doc_urls,
+                        max_depth=2  # Medium depth: 2-3 levels
+                    )
+                    
+                    if crawl_result.total_content:
+                        # Index crawled content into Knowledge Vault
+                        knowledge_vault.index_text(
+                            connector_name=connector.name,
+                            title=f"Official {connector.name} API Documentation",
+                            content=crawl_result.total_content,
+                            source_type="official_docs"
+                        )
+                        
+                        # Update connector with crawl stats
+                        connector_manager.update_connector(
+                            connector_id,
+                            doc_crawl_status="indexed",
+                            doc_crawl_urls=crawl_result.urls_crawled,
+                            doc_crawl_pages=len(crawl_result.pages),
+                            doc_crawl_words=crawl_result.total_words
+                        )
+                        
+                        print(f"  ✓ Pre-crawled {len(crawl_result.pages)} pages, {crawl_result.total_words} words indexed")
+                    else:
+                        connector_manager.update_connector(connector_id, doc_crawl_status="no_content")
+                        print(f"  ⚠ No documentation content found for pre-crawl")
+                        
+                except Exception as e:
+                    connector_manager.update_connector(connector_id, doc_crawl_status="failed")
+                    print(f"  ⚠ Documentation pre-crawl failed: {e}")
             
             # Crawl Fivetran documentation if URLs provided, or use manual input
             has_fivetran_urls = connector.fivetran_urls and connector.fivetran_urls.has_urls()

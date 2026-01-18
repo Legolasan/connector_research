@@ -20,11 +20,13 @@ function dashboard() {
         connectorsLoaded: false,
         showNewConnectorModal: false,
         showFivetranInputs: false,
+        showOfficialDocsInputs: false,
         isCreatingConnector: false,
         newConnector: {
             name: '',
             github_url: '',
             hevo_github_url: '',
+            official_doc_urls: '',  // One URL per line for pre-crawling
             fivetran_urls: {
                 setup_guide_url: '',
                 connector_overview_url: '',
@@ -162,6 +164,15 @@ function dashboard() {
                     };
                 }
                 
+                // Parse official doc URLs (one per line)
+                let officialDocUrls = null;
+                if (this.newConnector.official_doc_urls && this.newConnector.official_doc_urls.trim()) {
+                    officialDocUrls = this.newConnector.official_doc_urls
+                        .split('\n')
+                        .map(url => url.trim())
+                        .filter(url => url.length > 0);
+                }
+                
                 // Use FormData if we have a file to upload
                 let response;
                 if (this.newConnector.manual_file) {
@@ -172,6 +183,9 @@ function dashboard() {
                     }
                     if (this.newConnector.hevo_github_url) {
                         formData.append('hevo_github_url', this.newConnector.hevo_github_url);
+                    }
+                    if (officialDocUrls && officialDocUrls.length > 0) {
+                        formData.append('official_doc_urls', JSON.stringify(officialDocUrls));
                     }
                     if (fivetranUrls) {
                         formData.append('fivetran_urls', JSON.stringify(fivetranUrls));
@@ -194,6 +208,7 @@ function dashboard() {
                             name: this.newConnector.name,
                             github_url: this.newConnector.github_url || null,
                             hevo_github_url: this.newConnector.hevo_github_url || null,
+                            official_doc_urls: officialDocUrls,
                             fivetran_urls: fivetranUrls,
                             description: this.newConnector.description || '',
                             manual_text: this.newConnector.manual_text || null
@@ -206,6 +221,7 @@ function dashboard() {
                     this.connectors.push(connector);
                     this.showNewConnectorModal = false;
                     this.showFivetranInputs = false;
+                    this.showOfficialDocsInputs = false;
                     this.resetNewConnector();
                     
                     // Optionally auto-start research
@@ -261,7 +277,9 @@ function dashboard() {
         resetNewConnector() {
             this.newConnector = { 
                 name: '', 
-                github_url: '', 
+                github_url: '',
+                hevo_github_url: '',
+                official_doc_urls: '',
                 fivetran_urls: {
                     setup_guide_url: '',
                     connector_overview_url: '',
