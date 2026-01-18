@@ -3094,64 +3094,44 @@ Generate comprehensive markdown content for this section with PROPER CITATIONS.
         self,
         section_review: Any,
         section_content: str,
-        aggressive: bool = False  # Set to False by default - only stop for severe issues
+        aggressive: bool = False  # Not used - stop-the-line is disabled
     ) -> Optional[StopTheLineEvent]:
         """
         Check if section should trigger stop-the-line.
         
-        NOTE: Made less aggressive by default. Only triggers when:
-        - Multiple (3+) critical contradictions exist, OR
-        - Very low confidence (<0.3) on critical claims
+        NOTE: DISABLED - Always returns None. Stop-the-line manual intervention
+        has been disabled per user request. Research will continue even if
+        contradictions or low-confidence claims are detected.
+        
+        The contradictions and uncertainty flags are still logged but don't
+        stop the research generation.
         
         Args:
             section_review: SectionReview from Critic Agent
             section_content: Generated section content
-            aggressive: If True, use original strict checking (single contradiction triggers stop)
+            aggressive: Not used (stop-the-line disabled)
             
         Returns:
-            StopTheLineEvent if should stop, None otherwise
+            Always None (stop-the-line disabled)
         """
-        if not section_review:
-            return None
+        # DISABLED: Stop-the-line is turned off
+        # Just log any issues but don't stop
+        if section_review:
+            critical_contradictions = [
+                c for c in section_review.contradictions 
+                if c.severity == "CRITICAL"
+            ]
+            if critical_contradictions:
+                print(f"  ℹ️ {len(critical_contradictions)} critical contradictions detected (stop-the-line disabled, continuing)")
+            
+            low_confidence = [
+                f for f in section_review.uncertainty_flags
+                if f.confidence < 0.3
+            ]
+            if low_confidence:
+                print(f"  ℹ️ {len(low_confidence)} low-confidence claims detected (stop-the-line disabled, continuing)")
         
-        # Check for critical contradictions
-        critical_contradictions = [
-            c for c in section_review.contradictions 
-            if c.severity == "CRITICAL" and c.category in ["AUTH", "RATE_LIMIT", "OBJECT_SUPPORT"]
-        ]
-        
-        # Less aggressive: Only stop if multiple critical contradictions (3+)
-        # or if aggressive mode is enabled
-        min_contradictions = 1 if aggressive else 3
-        
-        if len(critical_contradictions) >= min_contradictions:
-            return StopTheLineEvent(
-                reason="CRITICAL_CONTRADICTION",
-                contradictions=critical_contradictions,
-                section_number=section_review.section_number,
-                required_action="HUMAN_REVIEW"
-            )
-        
-        # Check for low confidence on critical claims
-        # Less aggressive: Only trigger at very low confidence (<0.3) instead of <0.5
-        confidence_threshold = 0.5 if aggressive else 0.3
-        low_confidence_critical = [
-            f for f in section_review.uncertainty_flags
-            if f.confidence < confidence_threshold and f.category in ["AUTH", "RATE_LIMIT", "OBJECT_SUPPORT"]
-        ]
-        
-        # Only stop if multiple low-confidence issues
-        min_low_confidence = 1 if aggressive else 2
-        
-        if len(low_confidence_critical) >= min_low_confidence:
-            return StopTheLineEvent(
-                reason="LOW_CONFIDENCE_CRITICAL",
-                uncertainty_flags=low_confidence_critical,
-                section_number=section_review.section_number,
-                required_action="ADDITIONAL_SOURCES"
-            )
-        
-        return None
+        return None  # Never stop
     
     async def _validate_and_regenerate(
         self,
@@ -3213,19 +3193,16 @@ Generate comprehensive markdown content for this section with PROPER CITATIONS.
                   f"{len(validation_result.uncited_claims)} uncited claims, "
                   f"{len(validation_result.uncited_table_rows)} uncited table rows")
         
-        # After max attempts, if still invalid, trigger stop-the-line
-        should_stop = not validation_result.is_valid if validation_result else False
+        # After max attempts, if still invalid, log but continue (no stop-the-line)
+        # DISABLED: Stop-the-line for citation validation - just log and proceed
+        if validation_result and not validation_result.is_valid:
+            print(f"  ⚠ Citation validation incomplete after {max_attempts} attempts: "
+                  f"{len(validation_result.uncited_claims)} uncited claims, "
+                  f"{len(validation_result.uncited_table_rows)} uncited table rows. "
+                  f"Proceeding anyway (stop-the-line disabled).")
         
-        if should_stop:
-            print(f"  🛑 Citation validation failed after {max_attempts} attempts. Triggering stop-the-line.")
-            if self._current_progress:
-                self._current_progress.status = "stopped"
-                self._current_progress.error_message = (
-                    f"Citation validation failed: {len(validation_result.uncited_claims)} uncited claims, "
-                    f"{len(validation_result.uncited_table_rows)} uncited table rows"
-                )
-        
-        return content, validation_result, should_stop
+        # Always return should_stop=False to continue research
+        return content, validation_result, False
     
     async def _generate_and_review_section(
         self,
@@ -3256,20 +3233,11 @@ Generate comprehensive markdown content for this section with PROPER CITATIONS.
             max_attempts=3
         )
         
+        # NOTE: should_stop is always False now (stop-the-line disabled)
+        # This block will never execute but kept for reference
         if should_stop:
-            # Create a proper StopTheLineEvent for citation validation failure
-            citation_stop_event = StopTheLineEvent(
-                reason="CITATION_VALIDATION_FAILED",
-                contradictions=[],
-                section_number=section.number,
-                required_action="HUMAN_REVIEW",
-                uncertainty_flags=[]
-            )
-            return {
-                "content": content,
-                "review": None,
-                "stop_the_line": citation_stop_event
-            }
+            print(f"  ℹ️ Citation validation incomplete but continuing (stop-the-line disabled)")
+            pass  # Don't create stop event, just continue
         
         # Validate evidence integrity
         integrity_result = None
