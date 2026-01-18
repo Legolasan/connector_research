@@ -3,11 +3,13 @@
 Crawls official API documentation for connectors with medium-depth link following.
 
 Features:
+- Prioritizes llms.txt (LLM-optimized content per llmstxt.org)
+- Respects robots.txt with proper User-Agent
 - Uses Playwright for JS-rendered pages
-- Respects robots.txt
 - Extracts clean text from HTML
 - Follows internal links up to 2-3 levels deep
 - Deduplicates content across pages
+- Discovers URLs via sitemap.xml
 """
 
 import os
@@ -18,6 +20,8 @@ from typing import List, Dict, Set, Optional, Tuple
 from dataclasses import dataclass, field
 from datetime import datetime
 from urllib.parse import urljoin, urlparse
+from urllib.robotparser import RobotFileParser
+import xml.etree.ElementTree as ET
 import httpx
 
 from dotenv import load_dotenv
@@ -25,6 +29,17 @@ from dotenv import load_dotenv
 from services.doc_registry import get_connector_docs, get_official_doc_urls, get_connector_domain
 
 load_dotenv()
+
+
+# Bot-style User-Agent with contact info (follows best practices)
+USER_AGENT = "ConnectorResearchBot/1.0 (+https://github.com/Legolasan/connector_research)"
+
+# HTTP headers for requests
+DEFAULT_HEADERS = {
+    "User-Agent": USER_AGENT,
+    "Accept": "text/html,application/xhtml+xml,text/plain,application/xml",
+    "Accept-Language": "en-US,en;q=0.9"
+}
 
 
 # Try to import Playwright
@@ -131,6 +146,9 @@ class DocCrawler:
         self._browser: Optional[Browser] = None
         self._visited_urls: Set[str] = set()
         self._content_hashes: Set[str] = set()  # For deduplication
+        self._robot_parsers: Dict[str, RobotFileParser] = {}  # Cache robots.txt parsers
+        self._llms_txt_cache: Dict[str, Optional[str]] = {}  # Cache llms.txt content
+        self._sitemap_urls: Dict[str, List[str]] = {}  # Cache sitemap URLs
         
     async def _init_browser(self) -> Optional[Browser]:
         """Initialize Playwright browser if available."""
@@ -153,6 +171,242 @@ class DocCrawler:
         if self._browser:
             await self._browser.close()
             self._browser = None
+    
+    # =========================================================================
+    # llms.txt Support (LLM-optimized content per llmstxt.org)
+    # =========================================================================
+    
+    async def _fetch_llms_txt(self, domain: str) -> Optional[str]:
+        """
+        Fetch llms.txt if available (LLM-optimized content).
+        
+        Per https://llmstxt.org/, llms.txt provides content specifically
+        optimized for LLM consumption. This is the preferred source.
+        
+        Args:
+            domain: The domain to check (e.g., "shopify.dev")
+            
+        Returns:
+            Content of llms.txt if exists, None otherwise
+        """
+        if domain in self._llms_txt_cache:
+            return self._llms_txt_cache[domain]
+        
+        llms_url = f"https://{domain}/llms.txt"
+        
+        try:
+            async with httpx.AsyncClient(timeout=15.0, follow_redirects=True) as client:
+                response = await client.get(llms_url, headers=DEFAULT_HEADERS)
+                
+                if response.status_code == 200:
+                    content = response.text
+                    # Verify it looks like llms.txt content (not an error page)
+                    if len(content) > 100 and not content.strip().startswith('<!DOCTYPE'):
+                        self._llms_txt_cache[domain] = content
+                        print(f"  📄 Found llms.txt for {domain} ({len(content)} chars)")
+                        return content
+        except Exception as e:
+            print(f"  ⚠ Could not fetch llms.txt for {domain}: {e}")
+        
+        self._llms_txt_cache[domain] = None
+        return None
+    
+    async def _fetch_txt_variant(self, url: str) -> Optional[str]:
+        """
+        Try to fetch .txt variant of a URL (Shopify feature).
+        
+        Some sites (like Shopify) support appending .txt to any URL
+        to get a plain text version optimized for LLM consumption.
+        
+        Args:
+            url: The original URL
+            
+        Returns:
+            Plain text content if .txt variant exists, None otherwise
+        """
+        # Don't try if URL already ends in common extensions
+        if url.endswith(('.txt', '.json', '.xml', '.pdf', '.zip')):
+            return None
+        
+        txt_url = url.rstrip('/') + '.txt'
+        
+        try:
+            async with httpx.AsyncClient(timeout=15.0, follow_redirects=True) as client:
+                response = await client.get(txt_url, headers=DEFAULT_HEADERS)
+                
+                if response.status_code == 200:
+                    content = response.text
+                    # Verify it's actual text content, not HTML
+                    if not content.strip().startswith('<!DOCTYPE') and not content.strip().startswith('<html'):
+                        return content
+        except Exception:
+            pass
+        
+        return None
+    
+    # =========================================================================
+    # robots.txt Compliance
+    # =========================================================================
+    
+    async def _load_robots_txt(self, domain: str) -> RobotFileParser:
+        """
+        Load and parse robots.txt for a domain.
+        
+        Args:
+            domain: The domain to load robots.txt for
+            
+        Returns:
+            Configured RobotFileParser instance
+        """
+        if domain in self._robot_parsers:
+            return self._robot_parsers[domain]
+        
+        rp = RobotFileParser()
+        robots_url = f"https://{domain}/robots.txt"
+        
+        try:
+            async with httpx.AsyncClient(timeout=15.0, follow_redirects=True) as client:
+                response = await client.get(robots_url, headers=DEFAULT_HEADERS)
+                
+                if response.status_code == 200:
+                    # Parse the robots.txt content
+                    rp.parse(response.text.splitlines())
+                    
+                    # Extract sitemap URL if present
+                    for line in response.text.splitlines():
+                        if line.lower().startswith('sitemap:'):
+                            sitemap_url = line.split(':', 1)[1].strip()
+                            if domain not in self._sitemap_urls:
+                                self._sitemap_urls[domain] = []
+                            self._sitemap_urls[domain].append(sitemap_url)
+                    
+                    print(f"  🤖 Loaded robots.txt for {domain}")
+                else:
+                    # No robots.txt = allow all
+                    rp.allow_all = True
+        except Exception as e:
+            print(f"  ⚠ Could not load robots.txt for {domain}: {e}")
+            rp.allow_all = True
+        
+        self._robot_parsers[domain] = rp
+        return rp
+    
+    async def _can_fetch(self, url: str) -> bool:
+        """
+        Check if URL is allowed by robots.txt for our User-Agent.
+        
+        Args:
+            url: The URL to check
+            
+        Returns:
+            True if allowed to crawl, False otherwise
+        """
+        parsed = urlparse(url)
+        domain = parsed.netloc
+        
+        rp = await self._load_robots_txt(domain)
+        
+        # Check if we can fetch this URL
+        try:
+            return rp.can_fetch(USER_AGENT, url)
+        except Exception:
+            # If there's any error, default to allowing
+            return True
+    
+    # =========================================================================
+    # Sitemap Discovery
+    # =========================================================================
+    
+    async def _parse_sitemap(self, sitemap_url: str, domain: str, max_urls: int = 100) -> List[str]:
+        """
+        Extract URLs from sitemap.xml, filtering by robots.txt rules.
+        
+        Args:
+            sitemap_url: URL of the sitemap
+            domain: Domain for robots.txt checking
+            max_urls: Maximum URLs to extract
+            
+        Returns:
+            List of allowed URLs from the sitemap
+        """
+        urls = []
+        
+        try:
+            async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
+                response = await client.get(sitemap_url, headers=DEFAULT_HEADERS)
+                
+                if response.status_code != 200:
+                    return urls
+                
+                content = response.text
+                
+                # Parse XML
+                try:
+                    root = ET.fromstring(content)
+                except ET.ParseError:
+                    return urls
+                
+                # Handle namespace
+                ns = {'sm': 'http://www.sitemaps.org/schemas/sitemap/0.9'}
+                
+                # Check if this is a sitemap index (contains other sitemaps)
+                sitemap_refs = root.findall('.//sm:sitemap/sm:loc', ns)
+                if sitemap_refs:
+                    # It's a sitemap index - recursively parse referenced sitemaps
+                    for sitemap_ref in sitemap_refs[:5]:  # Limit to 5 sub-sitemaps
+                        sub_urls = await self._parse_sitemap(sitemap_ref.text, domain, max_urls - len(urls))
+                        urls.extend(sub_urls)
+                        if len(urls) >= max_urls:
+                            break
+                else:
+                    # It's a regular sitemap - extract URLs
+                    url_elements = root.findall('.//sm:url/sm:loc', ns)
+                    
+                    # Also try without namespace (some sitemaps don't use it)
+                    if not url_elements:
+                        url_elements = root.findall('.//url/loc')
+                    
+                    for url_elem in url_elements:
+                        if len(urls) >= max_urls:
+                            break
+                        
+                        url = url_elem.text
+                        if url and await self._can_fetch(url):
+                            # Filter to documentation-related URLs
+                            if any(kw in url.lower() for kw in ['doc', 'api', 'reference', 'guide', 'tutorial']):
+                                urls.append(url)
+                
+                print(f"  📋 Sitemap provided {len(urls)} doc URLs for {domain}")
+                
+        except Exception as e:
+            print(f"  ⚠ Could not parse sitemap {sitemap_url}: {e}")
+        
+        return urls
+    
+    async def _discover_urls_from_sitemap(self, domain: str) -> List[str]:
+        """
+        Discover documentation URLs from sitemap.xml.
+        
+        Args:
+            domain: Domain to check
+            
+        Returns:
+            List of discovered documentation URLs
+        """
+        # First ensure robots.txt is loaded (which extracts sitemap URLs)
+        await self._load_robots_txt(domain)
+        
+        # Check for cached sitemap URLs
+        if domain in self._sitemap_urls:
+            all_urls = []
+            for sitemap_url in self._sitemap_urls[domain]:
+                urls = await self._parse_sitemap(sitemap_url, domain)
+                all_urls.extend(urls)
+            return all_urls[:self.max_pages]
+        
+        # Try default sitemap location
+        default_sitemap = f"https://{domain}/sitemap.xml"
+        return await self._parse_sitemap(default_sitemap, domain)
     
     def _normalize_url(self, url: str, base_url: str) -> Optional[str]:
         """Normalize and validate a URL."""
@@ -280,10 +534,21 @@ class DocCrawler:
             return None
     
     async def _crawl_page_httpx(self, url: str) -> Optional[CrawledPage]:
-        """Crawl a page using httpx (fallback)."""
+        """Crawl a page using httpx (fallback) with proper User-Agent."""
         try:
+            # First try .txt variant (LLM-optimized content)
+            txt_content = await self._fetch_txt_variant(url)
+            if txt_content:
+                return CrawledPage(
+                    url=url + '.txt',
+                    title=f"LLM-optimized: {url}",
+                    content=txt_content,
+                    links=[]  # .txt files don't have links to follow
+                )
+            
+            # Fall back to HTML version
             async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
-                response = await client.get(url)
+                response = await client.get(url, headers=DEFAULT_HEADERS)
                 response.raise_for_status()
                 html = response.text
                 
@@ -316,14 +581,16 @@ class DocCrawler:
         max_depth: Optional[int] = None
     ) -> CrawlResult:
         """
-        Crawl official documentation for a connector.
+        Crawl official documentation for a connector with ethical compliance.
         
         Strategy:
-        1. Check registry for known URLs
-        2. Add user-provided URLs
-        3. If no URLs, auto-discover via web search
-        4. Crawl each URL, following links within same domain (2-3 levels)
-        5. Return combined content for indexing
+        1. Check for llms.txt (LLM-optimized content) - PRIORITY
+        2. Check registry for known URLs
+        3. Add user-provided URLs
+        4. Discover URLs from sitemap.xml
+        5. Auto-discover via web search if needed
+        6. Crawl each URL with robots.txt compliance
+        7. Return combined content for indexing
         
         Args:
             connector_name: Name of the connector
@@ -347,7 +614,7 @@ class DocCrawler:
         urls_to_crawl: List[str] = []
         allowed_domain: Optional[str] = None
         
-        # 1. Check registry
+        # 1. Check registry for domain
         registry_urls = get_official_doc_urls(connector_name)
         if registry_urls:
             urls_to_crawl.extend(registry_urls)
@@ -381,19 +648,61 @@ class DocCrawler:
             result.errors.append("Could not determine allowed domain for link following")
             return result
         
-        print(f"🕷️ Starting crawl of {connector_name} docs (domain: {allowed_domain})")
-        print(f"  Max depth: {self.max_depth}, Max pages: {self.max_pages}")
+        print(f"🕷️ Starting ethical crawl of {connector_name} docs")
+        print(f"  📍 Domain: {allowed_domain}")
+        print(f"  🤖 User-Agent: {USER_AGENT}")
+        print(f"  🔢 Max depth: {self.max_depth}, Max pages: {self.max_pages}")
+        
+        # =================================================================
+        # PRIORITY: Check for llms.txt (LLM-optimized content)
+        # =================================================================
+        llms_content = await self._fetch_llms_txt(allowed_domain)
+        if llms_content:
+            print(f"  ✅ Using llms.txt content (optimized for LLM consumption)")
+            result.pages.append(CrawledPage(
+                url=f"https://{allowed_domain}/llms.txt",
+                title=f"{connector_name} LLM-Optimized Documentation",
+                content=llms_content,
+                links=[],
+                depth=0
+            ))
+            result.urls_crawled.append(f"https://{allowed_domain}/llms.txt")
+            
+            # llms.txt often contains everything we need - check word count
+            if len(llms_content.split()) > 1000:
+                # Substantial content, can potentially skip further crawling
+                result.total_content = f"# {connector_name} Official Documentation (llms.txt)\n\n{llms_content}"
+                result.total_words = len(llms_content.split())
+                result.completed_at = datetime.utcnow()
+                result.crawl_duration_seconds = (result.completed_at - start_time).total_seconds()
+                print(f"  ✓ llms.txt provided sufficient content ({result.total_words} words)")
+                return result
+        
+        # =================================================================
+        # Load robots.txt and discover sitemap URLs
+        # =================================================================
+        await self._load_robots_txt(allowed_domain)
+        
+        # Try to get additional URLs from sitemap
+        sitemap_urls = await self._discover_urls_from_sitemap(allowed_domain)
+        if sitemap_urls:
+            for url in sitemap_urls:
+                if url not in urls_to_crawl:
+                    urls_to_crawl.append(url)
+            print(f"  📋 Added {len(sitemap_urls)} URLs from sitemap")
         
         # Initialize browser
         browser = await self._init_browser()
         page = None
         if browser:
             page = await browser.new_page()
+            # Set User-Agent in Playwright
+            await page.set_extra_http_headers(DEFAULT_HEADERS)
         
         try:
             # BFS crawl with depth tracking
             queue: List[Tuple[str, int]] = [(url, 0) for url in urls_to_crawl]
-            pages_crawled = 0
+            pages_crawled = len(result.pages)  # Account for llms.txt if we got partial content
             
             while queue and pages_crawled < self.max_pages:
                 url, depth = queue.pop(0)
@@ -404,10 +713,17 @@ class DocCrawler:
                 if depth > self.max_depth:
                     continue
                 
+                # =================================================================
+                # robots.txt compliance check
+                # =================================================================
+                if not await self._can_fetch(url):
+                    print(f"  🚫 Blocked by robots.txt: {url[:60]}...")
+                    continue
+                
                 self._visited_urls.add(url)
                 
                 # Crawl the page
-                print(f"  [{pages_crawled + 1}/{self.max_pages}] Depth {depth}: {url[:80]}...")
+                print(f"  [{pages_crawled + 1}/{self.max_pages}] Depth {depth}: {url[:70]}...")
                 
                 if page:
                     crawled_page = await self._crawl_page_playwright(url, page)
@@ -420,7 +736,7 @@ class DocCrawler:
                     result.urls_crawled.append(url)
                     pages_crawled += 1
                     
-                    # Add internal links to queue
+                    # Add internal links to queue (only if robots.txt allows)
                     if depth < self.max_depth:
                         for link in crawled_page.links:
                             normalized = self._normalize_url(link, url)
@@ -428,7 +744,7 @@ class DocCrawler:
                                 if self._is_same_domain(normalized, allowed_domain):
                                     queue.append((normalized, depth + 1))
                 
-                # Rate limiting
+                # Rate limiting (be polite to servers)
                 await asyncio.sleep(0.5)
             
             # Combine all content
