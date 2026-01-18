@@ -3,21 +3,38 @@
 Known official documentation URLs for popular data connectors.
 
 This registry enables automatic pre-crawling of official docs when a connector is created.
+Uses a two-gate URL filtering system:
+- Gate 1 (Hard): url_patterns (include) and exclude_patterns (deny)
+- Gate 2 (Soft): Keyword scoring for ranking
 """
 
 from typing import Dict, List, Optional
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 
 @dataclass
 class ConnectorDocConfig:
-    """Configuration for a connector's official documentation."""
+    """
+    Configuration for a connector's official documentation.
+    
+    URL Pattern Matching Rules:
+    - If url_patterns is set, ONLY URLs matching at least one pattern are allowed
+    - If exclude_patterns is set, matching URLs are rejected (after include check)
+    - Patterns use glob-style matching (fnmatch): * matches any sequence, ? matches single char
+    - Patterns should NOT overlap/contradict each other
+    """
     name: str
     official_docs: List[str]
     domain: str
+    # Gate 1: Hard pattern filters (glob-style)
+    url_patterns: List[str] = field(default_factory=list)  # Include patterns (if set, ONLY these are allowed)
+    exclude_patterns: List[str] = field(default_factory=list)  # Exclude patterns (always rejected)
+    # Specialized documentation URLs
     api_reference: Optional[str] = None
     auth_docs: Optional[str] = None
     rate_limit_docs: Optional[str] = None
+    webhooks_docs: Optional[str] = None
+    sdk_docs: Optional[str] = None
     changelog: Optional[str] = None
 
 
@@ -31,13 +48,28 @@ CONNECTOR_DOC_REGISTRY: Dict[str, ConnectorDocConfig] = {
             "https://shopify.dev/docs/api",
             "https://shopify.dev/docs/api/admin-rest",
             "https://shopify.dev/docs/api/admin-graphql",
-            "https://shopify.dev/docs/api/admin-graphql/latest/queries/orders",
-            "https://shopify.dev/docs/api/usage/bulk-operations",
         ],
         domain="shopify.dev",
+        # Gate 1: API-only patterns (clean separation, no contradictions)
+        url_patterns=[
+            "/docs/api",
+            "/docs/api/*",
+            "/docs/api/admin-rest/*",
+            "/docs/api/admin-graphql/*",
+            "/docs/api/storefront/*",
+            "/docs/api/usage/*",
+            "/changelog",
+            "/changelog/*",
+        ],
+        exclude_patterns=[
+            "/docs/api/shipping-partner-platform/*",  # Separate product
+            "*/beta/*",
+            "*/deprecated/*",
+        ],
         api_reference="https://shopify.dev/docs/api/admin-rest/latest",
         auth_docs="https://shopify.dev/docs/apps/build/authentication-authorization",
         rate_limit_docs="https://shopify.dev/docs/api/usage/rate-limits",
+        webhooks_docs="https://shopify.dev/docs/api/admin-rest/latest/resources/webhook",
         changelog="https://shopify.dev/changelog"
     ),
     "woocommerce": ConnectorDocConfig(

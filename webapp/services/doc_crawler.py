@@ -16,6 +16,7 @@ import os
 import re
 import asyncio
 import hashlib
+import fnmatch
 from typing import List, Dict, Set, Optional, Tuple
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -94,11 +95,48 @@ class CrawlResult:
 
 class DocCrawler:
     """
-    Documentation crawler with medium-depth link following.
+    Documentation crawler with two-gate URL filtering system.
+    
+    Gate 1 (Hard): Pattern-based allow/deny - URLs must pass ALL checks
+    Gate 2 (Soft): Keyword scoring for ranking passed URLs
     
     Crawls official API documentation and follows internal links
     up to 2-3 levels deep to gather comprehensive context.
     """
+    
+    # Gate 2: Content type keywords for scoring (soft ranking, not filtering)
+    CONTENT_TYPE_KEYWORDS = {
+        "api_reference": {
+            "path_keywords": ["/api/", "/reference/", "/rest/", "/graphql/", "/endpoint"],
+            "title_keywords": ["api", "reference", "endpoint", "resource", "schema"],
+            "weight": 1.0
+        },
+        "authentication": {
+            "path_keywords": ["/auth", "/oauth", "/token", "/scope", "/credential"],
+            "title_keywords": ["authentication", "authorization", "oauth", "token"],
+            "weight": 0.9
+        },
+        "rate_limits": {
+            "path_keywords": ["/rate-limit", "/limit", "/throttle", "/quota"],
+            "title_keywords": ["rate limit", "throttle", "quota"],
+            "weight": 0.85
+        },
+        "webhooks": {
+            "path_keywords": ["/webhook", "/event", "/callback", "/notification"],
+            "title_keywords": ["webhook", "event", "notification"],
+            "weight": 0.8
+        },
+        "sdk": {
+            "path_keywords": ["/sdk", "/library", "/client", "/java", "/python", "/node"],
+            "title_keywords": ["sdk", "client library", "java", "python"],
+            "weight": 0.7
+        },
+        "changelog": {
+            "path_keywords": ["/changelog", "/release", "/version", "/migration", "/whats-new"],
+            "title_keywords": ["changelog", "release notes", "what's new"],
+            "weight": 0.6
+        }
+    }
     
     # Content extraction patterns
     BOILERPLATE_PATTERNS = [
@@ -149,6 +187,116 @@ class DocCrawler:
         self._robot_parsers: Dict[str, RobotFileParser] = {}  # Cache robots.txt parsers
         self._llms_txt_cache: Dict[str, Optional[str]] = {}  # Cache llms.txt content
         self._sitemap_urls: Dict[str, List[str]] = {}  # Cache sitemap URLs
+        self._sitemap_cache: Dict[str, List[Tuple[str, Optional[float]]]] = {}  # Cache parsed sitemaps
+    
+    # =========================================================================
+    # URL Normalization (Before Any Checks)
+    # =========================================================================
+    
+    def _normalize_url_strict(self, url: str) -> str:
+        """
+        Normalize URL before pattern matching and deduplication.
+        
+        1. Parse URL
+        2. Lowercase host
+        3. Strip fragment (#...)
+        4. Collapse // in path
+        5. Normalize trailing slash (remove for docs)
+        6. Strip query params (docs sites don't need them)
+        7. Rebuild URL
+        """
+        parsed = urlparse(url)
+        
+        # Lowercase host
+        host = parsed.netloc.lower()
+        
+        # Clean path: collapse //, remove trailing slash
+        path = re.sub(r'/+', '/', parsed.path).rstrip('/')
+        if not path:
+            path = '/'
+        
+        # Rebuild without fragment and query
+        return f"{parsed.scheme}://{host}{path}"
+    
+    # =========================================================================
+    # Gate 1: Hard Pattern Matching (Primary Filter)
+    # =========================================================================
+    
+    def _passes_gate1(self, url: str, config) -> Tuple[bool, str]:
+        """
+        Gate 1: Hard allow/deny checks.
+        Returns (passed, reason) tuple.
+        
+        Critical Rule: If url_patterns exists, reject anything outside it.
+        """
+        parsed = urlparse(url)
+        path = parsed.path
+        
+        # 1. Domain must match
+        if config.domain and parsed.netloc.lower() != config.domain.lower():
+            return False, f"Domain mismatch: {parsed.netloc} != {config.domain}"
+        
+        # 2. If include_patterns exist, URL MUST match at least one
+        if hasattr(config, 'url_patterns') and config.url_patterns:
+            if not self._matches_any_pattern(path, config.url_patterns):
+                return False, f"Path '{path}' doesn't match any include pattern"
+        
+        # 3. URL must NOT match any exclude pattern
+        if hasattr(config, 'exclude_patterns') and config.exclude_patterns:
+            if self._matches_any_pattern(path, config.exclude_patterns):
+                return False, f"Path '{path}' matches exclude pattern"
+        
+        # 4. Must be HTML-like (reject PDFs, images, etc.)
+        if not self._is_html_url(path):
+            return False, f"Non-HTML content: {path}"
+        
+        return True, "Passed all checks"
+    
+    def _matches_any_pattern(self, path: str, patterns: List[str]) -> bool:
+        """Check if path matches any glob-style pattern."""
+        for pattern in patterns:
+            if fnmatch.fnmatch(path, pattern):
+                return True
+        return False
+    
+    def _is_html_url(self, path: str) -> bool:
+        """Check if URL likely points to HTML content."""
+        # Reject known non-HTML extensions
+        non_html = {'.pdf', '.zip', '.png', '.jpg', '.jpeg', '.gif', '.svg', 
+                    '.json', '.xml', '.css', '.js', '.ico', '.woff', '.woff2', '.ttf'}
+        ext = os.path.splitext(path)[1].lower()
+        return ext not in non_html
+    
+    # =========================================================================
+    # Gate 2: Soft Keyword Scoring (For Ranking Only)
+    # =========================================================================
+    
+    def _score_url(self, url: str, sitemap_priority: Optional[float] = None) -> float:
+        """
+        Gate 2: Score URL relevance for ranking.
+        Only called AFTER Gate 1 passes.
+        Keywords only affect order, never admission.
+        """
+        path = urlparse(url).path.lower()
+        score = 0.0
+        
+        # Score by content type keywords
+        for content_type, config in self.CONTENT_TYPE_KEYWORDS.items():
+            for kw in config["path_keywords"]:
+                if kw in path:
+                    score += config["weight"]
+                    break  # Only count once per type
+        
+        # Boost from sitemap priority if available
+        if sitemap_priority is not None:
+            score += sitemap_priority * 0.5
+        
+        # Penalize very deep paths (likely less important)
+        depth = path.count('/') - 1
+        if depth > 5:
+            score -= 0.2 * (depth - 5)
+        
+        return score
         
     async def _init_browser(self) -> Optional[Browser]:
         """Initialize Playwright browser if available."""
@@ -317,25 +465,44 @@ class DocCrawler:
     # Sitemap Discovery
     # =========================================================================
     
-    async def _parse_sitemap(self, sitemap_url: str, domain: str, max_urls: int = 100) -> List[str]:
+    async def _parse_sitemap_with_priority(
+        self, 
+        sitemap_url: str, 
+        max_sitemaps: int = 10,
+        _depth: int = 0
+    ) -> List[Tuple[str, Optional[float]]]:
         """
-        Extract URLs from sitemap.xml, filtering by robots.txt rules.
+        Parse sitemap, handling both index and urlset formats.
+        Returns normalized URLs with optional priority.
+        
+        NO FILTERING HERE - Gate 1 handles filtering.
         
         Args:
             sitemap_url: URL of the sitemap
-            domain: Domain for robots.txt checking
-            max_urls: Maximum URLs to extract
+            max_sitemaps: Maximum sitemaps to parse (prevents infinite loops)
+            _depth: Current recursion depth
             
         Returns:
-            List of allowed URLs from the sitemap
+            List of (url, priority) tuples
         """
-        urls = []
+        # Depth limit to prevent infinite recursion
+        if _depth >= max_sitemaps:
+            print(f"  ⚠ Max sitemap depth ({max_sitemaps}) reached at {sitemap_url}")
+            return []
+        
+        # Check cache
+        cache_key = sitemap_url
+        if cache_key in self._sitemap_cache:
+            return self._sitemap_cache[cache_key]
+        
+        urls: List[Tuple[str, Optional[float]]] = []
         
         try:
             async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
                 response = await client.get(sitemap_url, headers=DEFAULT_HEADERS)
                 
                 if response.status_code != 200:
+                    print(f"  ⚠ Sitemap returned {response.status_code}: {sitemap_url}")
                     return urls
                 
                 content = response.text
@@ -343,70 +510,99 @@ class DocCrawler:
                 # Parse XML
                 try:
                     root = ET.fromstring(content)
-                except ET.ParseError:
+                except ET.ParseError as e:
+                    print(f"  ⚠ Sitemap XML parse error: {e}")
                     return urls
                 
                 # Handle namespace
                 ns = {'sm': 'http://www.sitemaps.org/schemas/sitemap/0.9'}
                 
-                # Check if this is a sitemap index (contains other sitemaps)
-                sitemap_refs = root.findall('.//sm:sitemap/sm:loc', ns)
+                # Check if this is a SITEMAP INDEX (<sitemapindex>)
+                sitemap_refs = root.findall('.//sm:sitemap', ns)
+                if not sitemap_refs:
+                    sitemap_refs = root.findall('.//sitemap')  # Try without namespace
+                
                 if sitemap_refs:
-                    # It's a sitemap index - recursively parse referenced sitemaps
-                    for sitemap_ref in sitemap_refs[:5]:  # Limit to 5 sub-sitemaps
-                        sub_urls = await self._parse_sitemap(sitemap_ref.text, domain, max_urls - len(urls))
-                        urls.extend(sub_urls)
-                        if len(urls) >= max_urls:
-                            break
+                    # It's an INDEX - recursively parse referenced sitemaps
+                    print(f"  📂 Found sitemap index with {len(sitemap_refs)} sitemaps")
+                    for ref in sitemap_refs[:max_sitemaps]:
+                        loc = ref.find('sm:loc', ns)
+                        if loc is None:
+                            loc = ref.find('loc')
+                        if loc is not None and loc.text:
+                            sub_urls = await self._parse_sitemap_with_priority(
+                                loc.text, max_sitemaps, _depth + 1
+                            )
+                            urls.extend(sub_urls)
                 else:
-                    # It's a regular sitemap - extract URLs
-                    url_elements = root.findall('.//sm:url/sm:loc', ns)
-                    
-                    # Also try without namespace (some sitemaps don't use it)
+                    # It's a URLSET - extract URLs with priority
+                    url_elements = root.findall('.//sm:url', ns)
                     if not url_elements:
-                        url_elements = root.findall('.//url/loc')
+                        url_elements = root.findall('.//url')  # Try without namespace
                     
                     for url_elem in url_elements:
-                        if len(urls) >= max_urls:
-                            break
+                        loc = url_elem.find('sm:loc', ns)
+                        if loc is None:
+                            loc = url_elem.find('loc')
                         
-                        url = url_elem.text
-                        if url and await self._can_fetch(url):
-                            # Filter to documentation-related URLs
-                            if any(kw in url.lower() for kw in ['doc', 'api', 'reference', 'guide', 'tutorial']):
-                                urls.append(url)
-                
-                print(f"  📋 Sitemap provided {len(urls)} doc URLs for {domain}")
+                        priority_elem = url_elem.find('sm:priority', ns)
+                        if priority_elem is None:
+                            priority_elem = url_elem.find('priority')
+                        
+                        if loc is not None and loc.text:
+                            normalized = self._normalize_url_strict(loc.text)
+                            priority = None
+                            if priority_elem is not None and priority_elem.text:
+                                try:
+                                    priority = float(priority_elem.text)
+                                except ValueError:
+                                    pass
+                            urls.append((normalized, priority))
+            
+            # Cache results
+            self._sitemap_cache[cache_key] = urls
+            
+            if urls:
+                print(f"  📋 Sitemap parsed: {len(urls)} URLs from {sitemap_url}")
                 
         except Exception as e:
-            print(f"  ⚠ Could not parse sitemap {sitemap_url}: {e}")
+            print(f"  ⚠ Sitemap error for {sitemap_url}: {e}")
         
         return urls
     
-    async def _discover_urls_from_sitemap(self, domain: str) -> List[str]:
+    async def _get_sitemap_urls(self, domain: str) -> List[Tuple[str, Optional[float]]]:
         """
-        Discover documentation URLs from sitemap.xml.
+        Get all URLs from sitemap(s) for a domain.
         
         Args:
             domain: Domain to check
             
         Returns:
-            List of discovered documentation URLs
+            List of (url, priority) tuples from sitemap
         """
         # First ensure robots.txt is loaded (which extracts sitemap URLs)
         await self._load_robots_txt(domain)
         
-        # Check for cached sitemap URLs
-        if domain in self._sitemap_urls:
-            all_urls = []
-            for sitemap_url in self._sitemap_urls[domain]:
-                urls = await self._parse_sitemap(sitemap_url, domain)
-                all_urls.extend(urls)
-            return all_urls[:self.max_pages]
+        all_urls: List[Tuple[str, Optional[float]]] = []
         
-        # Try default sitemap location
-        default_sitemap = f"https://{domain}/sitemap.xml"
-        return await self._parse_sitemap(default_sitemap, domain)
+        # Check for sitemap URLs from robots.txt
+        if domain in self._sitemap_urls:
+            for sitemap_url in self._sitemap_urls[domain]:
+                urls = await self._parse_sitemap_with_priority(sitemap_url)
+                all_urls.extend(urls)
+        
+        # Also try default sitemap location if not found via robots.txt
+        if not all_urls:
+            default_sitemap = f"https://{domain}/sitemap.xml"
+            all_urls = await self._parse_sitemap_with_priority(default_sitemap)
+        
+        # Deduplicate while preserving order and keeping highest priority
+        seen: Dict[str, Optional[float]] = {}
+        for url, priority in all_urls:
+            if url not in seen or (priority is not None and (seen[url] is None or priority > seen[url])):
+                seen[url] = priority
+        
+        return [(url, priority) for url, priority in seen.items()]
     
     def _normalize_url(self, url: str, base_url: str) -> Optional[str]:
         """Normalize and validate a URL."""
@@ -581,15 +777,15 @@ class DocCrawler:
         max_depth: Optional[int] = None
     ) -> CrawlResult:
         """
-        Crawl official documentation for a connector with ethical compliance.
+        Crawl official documentation using the two-gate URL filtering system.
         
         Strategy:
         1. Check for llms.txt (LLM-optimized content) - PRIORITY
-        2. Check registry for known URLs
-        3. Add user-provided URLs
-        4. Discover URLs from sitemap.xml
-        5. Auto-discover via web search if needed
-        6. Crawl each URL with robots.txt compliance
+        2. Get connector config from registry (patterns, domain)
+        3. Gather URLs from sitemap + registry + user-provided
+        4. Gate 1: Hard filter (domain, patterns, robots.txt, HTML check)
+        5. Gate 2: Score and rank URLs by keyword relevance
+        6. Crawl top N URLs
         7. Return combined content for indexing
         
         Args:
@@ -606,50 +802,38 @@ class DocCrawler:
         if max_depth is not None:
             self.max_depth = max_depth
         
-        # Reset state
+        # Reset state for new crawl
         self._visited_urls.clear()
         self._content_hashes.clear()
+        self._sitemap_cache.clear()
         
-        # Gather URLs from all sources
-        urls_to_crawl: List[str] = []
+        # Get connector config from registry
+        config = get_connector_docs(connector_name)
         allowed_domain: Optional[str] = None
         
-        # 1. Check registry for domain
-        registry_urls = get_official_doc_urls(connector_name)
-        if registry_urls:
-            urls_to_crawl.extend(registry_urls)
-            allowed_domain = get_connector_domain(connector_name)
-            print(f"📚 Found {len(registry_urls)} URLs in registry for {connector_name}")
+        if config:
+            allowed_domain = config.domain
+            has_patterns = bool(config.url_patterns)
+            print(f"📚 Loaded config for {connector_name}")
+            print(f"  📍 Domain: {allowed_domain}")
+            if has_patterns:
+                print(f"  🎯 URL patterns: {len(config.url_patterns)} include, {len(config.exclude_patterns)} exclude")
+        else:
+            # Create a minimal config for user-provided URLs
+            if user_provided_urls:
+                parsed = urlparse(user_provided_urls[0])
+                allowed_domain = parsed.netloc
+            print(f"⚠ No registry config for {connector_name}, using fallback")
         
-        # 2. Add user-provided URLs
-        if user_provided_urls:
-            for url in user_provided_urls:
-                url = url.strip()
-                if url and url not in urls_to_crawl:
-                    urls_to_crawl.append(url)
-                    # Extract domain from first user URL if no registry domain
-                    if not allowed_domain:
-                        parsed = urlparse(url)
-                        allowed_domain = parsed.netloc
-            print(f"📝 Added {len(user_provided_urls)} user-provided URLs")
-        
-        # 3. Auto-discover if no URLs found
-        if not urls_to_crawl:
-            discovered = await self._auto_discover_docs(connector_name)
-            if discovered:
-                urls_to_crawl.extend(discovered['urls'])
-                allowed_domain = discovered.get('domain')
-                print(f"🔍 Auto-discovered {len(discovered['urls'])} URLs for {connector_name}")
-            else:
-                result.errors.append(f"No documentation URLs found for {connector_name}")
-                return result
-        
-        if not allowed_domain:
-            result.errors.append("Could not determine allowed domain for link following")
+        if not allowed_domain and not user_provided_urls:
+            result.errors.append(f"No documentation URLs found for {connector_name}")
             return result
         
-        print(f"🕷️ Starting ethical crawl of {connector_name} docs")
-        print(f"  📍 Domain: {allowed_domain}")
+        if not allowed_domain:
+            parsed = urlparse(user_provided_urls[0])
+            allowed_domain = parsed.netloc
+        
+        print(f"🕷️ Starting two-gate crawl of {connector_name} docs")
         print(f"  🤖 User-Agent: {USER_AGENT}")
         print(f"  🔢 Max depth: {self.max_depth}, Max pages: {self.max_pages}")
         
@@ -658,7 +842,7 @@ class DocCrawler:
         # =================================================================
         llms_content = await self._fetch_llms_txt(allowed_domain)
         if llms_content:
-            print(f"  ✅ Using llms.txt content (optimized for LLM consumption)")
+            print(f"  ✅ Found llms.txt (optimized for LLM consumption)")
             result.pages.append(CrawledPage(
                 url=f"https://{allowed_domain}/llms.txt",
                 title=f"{connector_name} LLM-Optimized Documentation",
@@ -668,9 +852,8 @@ class DocCrawler:
             ))
             result.urls_crawled.append(f"https://{allowed_domain}/llms.txt")
             
-            # llms.txt often contains everything we need - check word count
+            # llms.txt often contains everything we need
             if len(llms_content.split()) > 1000:
-                # Substantial content, can potentially skip further crawling
                 result.total_content = f"# {connector_name} Official Documentation (llms.txt)\n\n{llms_content}"
                 result.total_words = len(llms_content.split())
                 result.completed_at = datetime.utcnow()
@@ -679,30 +862,95 @@ class DocCrawler:
                 return result
         
         # =================================================================
-        # Load robots.txt and discover sitemap URLs
+        # Gather candidate URLs from all sources
         # =================================================================
-        await self._load_robots_txt(allowed_domain)
+        candidate_urls: List[Tuple[str, Optional[float]]] = []
         
-        # Try to get additional URLs from sitemap
-        sitemap_urls = await self._discover_urls_from_sitemap(allowed_domain)
-        if sitemap_urls:
-            for url in sitemap_urls:
-                if url not in urls_to_crawl:
-                    urls_to_crawl.append(url)
-            print(f"  📋 Added {len(sitemap_urls)} URLs from sitemap")
+        # 1. Get URLs from sitemap (with priorities)
+        sitemap_urls = await self._get_sitemap_urls(allowed_domain)
+        candidate_urls.extend(sitemap_urls)
+        print(f"  📋 Sitemap provided {len(sitemap_urls)} candidate URLs")
         
-        # Initialize browser
+        # 2. Add registry URLs (high priority)
+        if config and config.official_docs:
+            for url in config.official_docs:
+                normalized = self._normalize_url_strict(url)
+                if not any(u == normalized for u, _ in candidate_urls):
+                    candidate_urls.append((normalized, 1.0))  # High priority
+        
+        # 3. Add user-provided URLs (highest priority)
+        if user_provided_urls:
+            for url in user_provided_urls:
+                normalized = self._normalize_url_strict(url.strip())
+                if normalized and not any(u == normalized for u, _ in candidate_urls):
+                    candidate_urls.append((normalized, 1.0))  # High priority
+            print(f"  📝 Added {len(user_provided_urls)} user-provided URLs")
+        
+        print(f"  📊 Total candidates before filtering: {len(candidate_urls)}")
+        
+        # =================================================================
+        # Gate 1: Hard Filter (domain, patterns, robots.txt, HTML)
+        # =================================================================
+        passed_gate1: List[Tuple[str, Optional[float]]] = []
+        rejected_gate1 = 0
+        rejection_reasons: Dict[str, int] = {}
+        
+        for url, priority in candidate_urls:
+            # robots.txt check
+            if not await self._can_fetch(url):
+                rejected_gate1 += 1
+                rejection_reasons["robots.txt blocked"] = rejection_reasons.get("robots.txt blocked", 0) + 1
+                continue
+            
+            # Pattern-based checks (if config exists)
+            if config:
+                passed, reason = self._passes_gate1(url, config)
+                if not passed:
+                    rejected_gate1 += 1
+                    rejection_reasons[reason.split(':')[0]] = rejection_reasons.get(reason.split(':')[0], 0) + 1
+                    continue
+            
+            passed_gate1.append((url, priority))
+        
+        print(f"  🚪 Gate 1: {len(passed_gate1)}/{len(candidate_urls)} URLs passed")
+        if rejection_reasons:
+            for reason, count in sorted(rejection_reasons.items(), key=lambda x: -x[1])[:3]:
+                print(f"     ❌ {count} rejected: {reason}")
+        
+        if not passed_gate1:
+            result.errors.append("No URLs passed Gate 1 filtering")
+            return result
+        
+        # =================================================================
+        # Gate 2: Score and Rank URLs
+        # =================================================================
+        scored_urls: List[Tuple[str, float]] = []
+        for url, priority in passed_gate1:
+            score = self._score_url(url, priority)
+            scored_urls.append((url, score))
+        
+        # Sort by score descending
+        scored_urls.sort(key=lambda x: x[1], reverse=True)
+        
+        # Take top N URLs
+        urls_to_crawl = [url for url, _ in scored_urls[:self.max_pages * 2]]  # Get more for BFS
+        
+        print(f"  🏆 Gate 2: Top {min(len(urls_to_crawl), 5)} URLs by score:")
+        for url, score in scored_urls[:5]:
+            print(f"     [{score:.2f}] {url[:60]}...")
+        
+        # =================================================================
+        # Crawl URLs with depth tracking
+        # =================================================================
         browser = await self._init_browser()
         page = None
         if browser:
             page = await browser.new_page()
-            # Set User-Agent in Playwright
             await page.set_extra_http_headers(DEFAULT_HEADERS)
         
         try:
-            # BFS crawl with depth tracking
             queue: List[Tuple[str, int]] = [(url, 0) for url in urls_to_crawl]
-            pages_crawled = len(result.pages)  # Account for llms.txt if we got partial content
+            pages_crawled = len(result.pages)  # Account for llms.txt
             
             while queue and pages_crawled < self.max_pages:
                 url, depth = queue.pop(0)
@@ -713,17 +961,10 @@ class DocCrawler:
                 if depth > self.max_depth:
                     continue
                 
-                # =================================================================
-                # robots.txt compliance check
-                # =================================================================
-                if not await self._can_fetch(url):
-                    print(f"  🚫 Blocked by robots.txt: {url[:60]}...")
-                    continue
-                
                 self._visited_urls.add(url)
                 
                 # Crawl the page
-                print(f"  [{pages_crawled + 1}/{self.max_pages}] Depth {depth}: {url[:70]}...")
+                print(f"  ✓ [{pages_crawled + 1}/{self.max_pages}] {url[:70]}...")
                 
                 if page:
                     crawled_page = await self._crawl_page_playwright(url, page)
@@ -736,15 +977,20 @@ class DocCrawler:
                     result.urls_crawled.append(url)
                     pages_crawled += 1
                     
-                    # Add internal links to queue (only if robots.txt allows)
+                    # Add internal links to queue (must pass Gate 1)
                     if depth < self.max_depth:
                         for link in crawled_page.links:
                             normalized = self._normalize_url(link, url)
                             if normalized and normalized not in self._visited_urls:
-                                if self._is_same_domain(normalized, allowed_domain):
+                                # Quick Gate 1 check for discovered links
+                                if config:
+                                    passed, _ = self._passes_gate1(normalized, config)
+                                    if passed:
+                                        queue.append((normalized, depth + 1))
+                                elif self._is_same_domain(normalized, allowed_domain):
                                     queue.append((normalized, depth + 1))
                 
-                # Rate limiting (be polite to servers)
+                # Rate limiting
                 await asyncio.sleep(0.5)
             
             # Combine all content
