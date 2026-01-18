@@ -233,113 +233,70 @@ def create_sdk_section(method_name: str, section_number: int) -> ResearchSection
         is_method_section=True,
         method_name=method_name,
         prompts=[
-            f"""Generate a comprehensive SDK/Client Library RUNBOOK for {{connector}}.
+            f"""Generate a comprehensive SDK/Client Library INFORMATION GUIDE for {{connector}}.
+This should be purely informational - NO code examples, NO code snippets.
+Instead, provide links to official documentation.
 
-**CRITICAL: Java SDK Priority for Hevo Integration**
-Since Hevo Data uses Java, prioritize Java SDK discovery and documentation:
+## Official SDK Overview
 
-## Official SDK Deep Dive
+### 1. Available SDKs
 
-### 1. Java SDK Discovery (HIGHEST PRIORITY)
+| Language | Package Name | Repository | Documentation | Status |
+|----------|--------------|------------|---------------|--------|
+| Java | (groupId:artifactId) | [GitHub](link) | [Docs](link) | ✓/✗ |
+| Python | | [GitHub](link) | [Docs](link) | |
+| Node.js | | [GitHub](link) | [Docs](link) | |
+| Ruby | | [GitHub](link) | [Docs](link) | |
+| Go | | [GitHub](link) | [Docs](link) | |
+| PHP | | [GitHub](link) | [Docs](link) | |
 
-**1.1 Official Java SDK**
-- Check Maven Central (mvnrepository.com) for official Java SDK
-- Check GitHub for official {{connector}} Java client
-- Note Maven/Gradle coordinates if available
+### 2. SDK Capabilities Matrix
 
-| SDK Type | Package | Maven Central | GitHub | Status |
-|----------|---------|---------------|--------|--------|
-| Official Java SDK | (groupId:artifactId) | (link) | (link) | ✓/✗ |
-| Community Java | (if any) | (link) | (link) | |
+| Capability | Java | Python | Node.js | Notes |
+|------------|------|--------|---------|-------|
+| OAuth 2.0 | ✓/✗ | ✓/✗ | ✓/✗ | |
+| Pagination | ✓/✗ | ✓/✗ | ✓/✗ | |
+| Rate Limiting | ✓/✗ | ✓/✗ | ✓/✗ | |
+| Bulk Operations | ✓/✗ | ✓/✗ | ✓/✗ | |
+| Retry Logic | ✓/✗ | ✓/✗ | ✓/✗ | |
+| Webhooks | ✓/✗ | ✓/✗ | ✓/✗ | |
 
-**1.2 If No Java SDK Exists**
-Provide clear guidance:
-- Recommended HTTP client for Java (OkHttp, Apache HttpClient, Java 11+ HttpClient)
-- Code example for direct REST/GraphQL API calls from Java
-- Any code generation options (OpenAPI Generator, GraphQL codegen)
+### 3. Installation Information
 
-**1.3 Java Integration Code**
-```java
-// Complete Java example - can be copied directly
-// Include: dependencies, authentication, basic data extraction
-```
+| Language | Package Manager | Package Name | Latest Version |
+|----------|----------------|--------------|----------------|
+| Java | Maven/Gradle | | |
+| Python | pip | | |
+| Node.js | npm | | |
 
-### 2. Other Language SDKs
+📚 **Installation Guide**: See [Official SDK Documentation](link)
 
-| Language | Package | Version | Docs | Maintenance Status |
-|----------|---------|---------|------|-------------------|
-| Python | | | | |
-| Node.js | | | | |
-| Ruby | | | | |
-| Go | | | | |
-| PHP | | | | |
+### 4. Authentication Support
 
-### 3. SDK Installation & Setup
-
-**3.1 Java Setup (Primary)**
-```xml
-<!-- Maven dependency -->
-<dependency>
-    <groupId>...</groupId>
-    <artifactId>...</artifactId>
-    <version>...</version>
-</dependency>
-```
-
-```groovy
-// Gradle dependency
-implementation '...'
-```
-
-**3.2 Authentication via SDK**
-```java
-// Java authentication setup
-// Include all supported auth methods
-```
-
-### 4. SDK Capabilities Matrix
-
-| Capability | Java SDK | Python SDK | Node.js SDK |
-|------------|----------|------------|-------------|
+| Auth Method | Java SDK | Python SDK | Node.js SDK |
+|-------------|----------|------------|-------------|
 | OAuth 2.0 | ✓/✗ | ✓/✗ | ✓/✗ |
-| Pagination | ✓/✗ | ✓/✗ | ✓/✗ |
-| Rate Limiting | ✓/✗ | ✓/✗ | ✓/✗ |
-| Bulk Operations | ✓/✗ | ✓/✗ | ✓/✗ |
-| Retry Logic | ✓/✗ | ✓/✗ | ✓/✗ |
-| Webhooks | ✓/✗ | ✓/✗ | ✓/✗ |
+| API Key | ✓/✗ | ✓/✗ | ✓/✗ |
+| Basic Auth | ✓/✗ | ✓/✗ | ✓/✗ |
 
-### 5. Java Implementation Patterns
+📚 **Authentication Examples**: See [Official Auth Guide](link)
 
-**5.1 Full Data Extraction (Java)**
-```java
-// Complete working code for full data extraction
-// Include pagination handling
-```
+### 5. SDK Limitations & Workarounds
 
-**5.2 Incremental Sync (Java)**
-```java
-// Incremental extraction with cursor management
-```
+| SDK | Known Limitation | Workaround | Documentation |
+|-----|-----------------|------------|---------------|
+| | | | [Link](url) |
 
-**5.3 Error Handling (Java)**
-```java
-// Exception handling patterns
-// Include rate limit handling, retries
-```
+### 6. Recommendation Summary
 
-### 6. SDK Limitations & Workarounds
+| Factor | Recommendation |
+|--------|---------------|
+| Best SDK for Java | (SDK name or "Use REST API directly") |
+| Maintenance Status | (Active/Stable/Deprecated) |
+| Implementation Complexity | Low/Medium/High |
+| Alternative Approach | (if no good SDK exists) |
 
-| SDK | Known Limitation | Workaround |
-|-----|-----------------|------------|
-| | | |
-
-### 7. Recommendation for Hevo Integration
-
-Based on the SDK analysis, recommend:
-1. **Best approach for Java integration** (SDK vs. direct API)
-2. **Required dependencies** (list all Maven/Gradle deps)
-3. **Implementation complexity** (Low/Medium/High)
-4. **Maintenance considerations** (SDK version updates, deprecations)
+📚 **Code Examples & Quickstart**: See [Official Getting Started Guide](link)
 """
         ]
     )
@@ -361,127 +318,94 @@ def create_method_section(method_name: str, section_number: int) -> ResearchSect
         is_method_section=True,
         method_name=method_name,
         prompts=[
-            f"""Generate a comprehensive RUNBOOK for {method_name} extraction from {{connector}}. 
-Use step-by-step format with numbered procedures, code examples, and verification steps.
+            f"""Generate a comprehensive INFORMATION GUIDE for {method_name} from {{connector}}. 
+This should be purely informational - NO code examples, NO code snippets.
+Instead, provide links to official documentation where code examples can be found.
 
-## {method_name} Extraction Runbook
+## {method_name} Overview
 
-### Prerequisites Checklist
-- [ ] Prerequisite 1 (e.g., API access approved)
-- [ ] Prerequisite 2 (e.g., Credentials obtained)  
-- [ ] Prerequisite 3 (e.g., Network access verified)
+### API Endpoint Information
+| Property | Value | Documentation Link |
+|----------|-------|-------------------|
+| Base URL | (actual URL) | [Official Docs](link) |
+| API Version | (version) | |
+| Authentication | (method) | |
 
-### Step 1: Authentication Setup
+### Authentication Requirements
 
-**1.1 Obtain Credentials**
-| Credential | Where to Get | Format |
-|------------|--------------|--------|
-| (credential name) | (location/portal) | (format) |
+**Required Credentials**
+| Credential | Description | Where to Obtain |
+|------------|-------------|-----------------|
+| (credential name) | (description) | [Portal Link](link) |
 
-**1.2 Authentication Code**
-```python
-# Complete, runnable authentication code
-# Include: imports, configuration, token acquisition
-```
+**Supported Auth Methods**
+| Method | Supported | Notes |
+|--------|-----------|-------|
+| OAuth 2.0 | Yes/No | |
+| API Key | Yes/No | |
+| Basic Auth | Yes/No | |
 
-**1.3 Verify Authentication**
-```python
-# Code to verify auth is working
-# Expected output: (describe expected result)
-```
+📚 **Code Examples**: See [Official Authentication Guide](link-to-docs)
 
-### Step 2: Discover Available Objects
+### Available Objects/Endpoints
 
-**2.1 List All Objects**
-```python
-# Code to list/discover available objects
-```
-
-**2.2 Objects Inventory**
-| Object | Endpoint/Query | Primary Key | Incremental Field | Notes |
-|--------|----------------|-------------|-------------------|-------|
+| Object | Endpoint | Method | Description |
+|--------|----------|--------|-------------|
 | (Complete table of ALL accessible objects) |
 
-### Step 3: Extract Data (Full Load)
+📚 **API Reference**: See [Official API Reference](link-to-docs)
 
-**3.1 Full Load Procedure**
-```python
-# Complete code for full extraction with pagination
-def extract_full_load(object_name):
-    # Implementation with error handling
-    pass
-```
+### Data Extraction Capabilities
 
-**3.2 Verification**
-- Expected record count: (how to verify)
-- Data quality check: (what to check)
+**Full Load Support**
+| Object | Supports Full Load | Notes |
+|--------|-------------------|-------|
+| (list objects) | Yes/No | |
 
-### Step 4: Extract Data (Incremental)
-
-**4.1 Incremental Load Procedure**
-```python
-# Code for incremental extraction using cursor field
-def extract_incremental(object_name, last_cursor):
-    # Implementation
-    pass
-```
-
-**4.2 Cursor Management**
-| Object | Cursor Field | Format | Storage Method |
-|--------|--------------|--------|----------------|
+**Incremental Load Support**
+| Object | Cursor Field | Field Type | Supports Incremental |
+|--------|--------------|------------|---------------------|
 | (list objects with their cursor fields) |
 
-### Step 5: Handle Pagination
+### Pagination
 
-**5.1 Pagination Details**
 | Property | Value |
 |----------|-------|
-| Type | (cursor/offset/page) |
-| Max Per Request | (number) |
-| Next Page Indicator | (field/header) |
+| Pagination Type | (cursor/offset/page) |
+| Max Records Per Request | (number) |
+| Page Size Parameter | (parameter name) |
+| Next Page Indicator | (field/header name) |
 
-**5.2 Pagination Code**
-```python
-# Complete pagination handling code
-def paginate_results(endpoint):
-    # Handle all pagination scenarios
-    pass
-```
+📚 **Pagination Guide**: See [Official Pagination Docs](link-to-docs)
 
-### Step 6: Error Handling
+### Rate Limits
 
-**6.1 Common Errors**
-| Error Code | Meaning | Action | Retry |
-|------------|---------|--------|-------|
-| (list all relevant error codes) |
-
-**6.2 Error Handling Code**
-```python
-# Robust error handling with retry logic
-```
-
-### Step 7: Rate Limit Management
-
-**7.1 Rate Limits**
-| Limit Type | Value | Scope | Header |
-|------------|-------|-------|--------|
+| Limit Type | Value | Scope | Reset Period |
+|------------|-------|-------|--------------|
 | (document all rate limits) |
 
-**7.2 Rate Limiter Implementation**
-```python
-# Rate limiting code with backoff
-```
+### Error Codes
 
-### Troubleshooting Guide
+| Error Code | HTTP Status | Meaning | Recommended Action |
+|------------|-------------|---------|-------------------|
+| (list all relevant error codes) |
 
-| Symptom | Diagnosis | Resolution |
-|---------|-----------|------------|
-| (common issue 1) | (how to diagnose) | (how to fix) |
-| (common issue 2) | (how to diagnose) | (how to fix) |
+📚 **Error Handling Guide**: See [Official Error Reference](link-to-docs)
 
-### Performance Optimization Tips
-1. (Tip 1 for better performance)
-2. (Tip 2)
+### Best Practices
+
+1. (Best practice 1)
+2. (Best practice 2)
+3. (Best practice 3)
+
+### Troubleshooting
+
+| Issue | Possible Cause | Resolution |
+|-------|----------------|------------|
+| (common issue 1) | (cause) | (resolution) |
+| (common issue 2) | (cause) | (resolution) |
+
+📚 **Troubleshooting Guide**: See [Official Support Docs](link-to-docs)
 3. (Tip 3)
 
 ### Pros & Cons Summary
@@ -588,7 +512,7 @@ Create this exact table with Yes or No in the Available column:
         "How do you register a developer app/integration?",
         "What credentials are needed (API keys, OAuth app, service account)?",
         "Are there IP whitelists or redirect URI requirements?",
-        "Provide a minimal health check code example to verify API access."
+        "Link to official documentation for API health check and connection testing."
     ]),
 ]
 
@@ -600,7 +524,7 @@ CROSS_CUTTING_SECTIONS = [
         "Create a comparison table: Method | Auth Type | Token Lifetime | Refresh Strategy | Scopes Required",
         "Which authentication method is recommended for production ETL pipelines?",
         "What are the security best practices for credential management?",
-        "Provide unified authentication code that works across multiple methods."
+        "Link to official authentication documentation for each method."
     ]),
     
     ResearchSection(101, "Rate Limiting Strategy", 3, "Cross-Cutting Concerns", [
@@ -633,7 +557,7 @@ CROSS_CUTTING_SECTIONS = [
         "Create a table: Method | Delete Detection | Field/Endpoint | Reliability",
         "Which method is most reliable for detecting deletions?",
         "How should soft deletes vs hard deletes be handled?",
-        "Provide code for delete detection using the recommended method."
+        "Link to official documentation for delete detection implementation."
     ]),
 ]
 
@@ -660,7 +584,7 @@ FINAL_SECTIONS = [
         "- Supported sync modes (Full/Incremental/CDC)",
         "- Delete detection method",
         "- Whether Fivetran supports this object (if known)",
-        "Provide sample extraction code for the top 5 most important objects."
+        "Provide links to official API documentation for each major object."
     ], requires_fivetran=True, requires_code_analysis=True),
     
     ResearchSection(202, "Fivetran Parity Analysis", 4, "Implementation Guide", [
@@ -848,10 +772,12 @@ Describe the optimal combination of methods for production use.
 | **Timeliness** | Records within SLA / Total | > 99% | Error < 95% |
 | **Consistency** | Matching records / Total | 100% | Error < 100% |
 
-### Validation Code Example
-```python
-# Provide Python validation code example
-```
+### Validation Resources
+
+| Topic | Documentation Link |
+|-------|-------------------|
+| Data Quality Framework | [Official Docs](link) |
+| Validation Best Practices | [Guide](link) |
 """
     ]),
     
@@ -874,9 +800,12 @@ Describe the optimal combination of methods for production use.
 | Database | Batch Upsert | 1,000-5,000 | 2-4 connections |
 
 ### Merge/Upsert Logic
-```sql
--- Provide SQL merge pattern for the target system
-```
+
+| Target System | Merge Strategy | Documentation |
+|---------------|---------------|---------------|
+| Snowflake | MERGE INTO | [Snowflake MERGE Docs](link) |
+| BigQuery | MERGE | [BigQuery MERGE Docs](link) |
+| Redshift | MERGE | [Redshift MERGE Docs](link) |
 
 ### Slowly Changing Dimensions (SCD)
 | SCD Type | Use Case | Implementation |
@@ -895,7 +824,7 @@ Describe the optimal combination of methods for production use.
 # Phase 6: Technical & Operational Requirements (Enterprise)
 OPERATIONAL_SECTIONS = [
     ResearchSection(400, "Connectivity Runbook", 6, "Technical Operations", [
-        """Create a step-by-step connectivity runbook for {connector}:
+        """Create a step-by-step connectivity guide for {connector}:
 
 ### Prerequisites Checklist
 - [ ] Admin access to {connector} account
@@ -904,44 +833,46 @@ OPERATIONAL_SECTIONS = [
 - [ ] Development/sandbox environment available
 
 ### Step 1: Network Connectivity Verification
-```bash
-# Verify API endpoint is reachable
-curl -I https://api.{connector}.com/health
-# Expected: HTTP 200 OK
-```
+
+| Check | Expected Result | Documentation |
+|-------|-----------------|---------------|
+| API endpoint reachable | HTTP 200 OK | [API Status](link) |
+| SSL certificate valid | Valid cert chain | |
+| IP whitelist configured | Connection accepted | |
 
 ### Step 2: Application Registration
-1. Navigate to Developer Portal / Admin Console
-2. Create new application/integration
-3. Configure OAuth redirect URIs (if applicable)
-4. Note down: Client ID, Client Secret, API Key
 
-### Step 3: Authentication Setup
-```python
-# Provide complete authentication code
-# Include: token acquisition, refresh logic, error handling
-```
+| Step | Action | Portal Location |
+|------|--------|-----------------|
+| 1 | Create developer account | [Developer Portal](link) |
+| 2 | Register new application | [App Registration](link) |
+| 3 | Configure OAuth settings | [OAuth Setup](link) |
+| 4 | Obtain credentials | API Keys page |
 
-### Step 4: Connection Test
-```python
-# Provide connection test code
-# Verify: auth works, can list objects, can read data
-```
+### Step 3: Required Credentials
 
-### Step 5: Permissions Verification
-```python
-# Test each required permission/scope
-# Document which objects each permission grants access to
-```
+| Credential | Description | Where to Find |
+|------------|-------------|---------------|
+| Client ID | Application identifier | Developer settings |
+| Client Secret | Application secret | Developer settings |
+| API Key | Access token | API settings |
+
+📚 **Authentication Guide**: See [Official Auth Documentation](link)
+
+### Step 4: Permissions Required
+
+| Permission/Scope | Purpose | Required For |
+|-----------------|---------|--------------|
+| (list all required permissions) | | |
 
 ### Troubleshooting Guide
-| Symptom | Possible Cause | Resolution |
-|---------|----------------|------------|
-| Connection timeout | Firewall blocking | Whitelist IPs |
-| 401 Unauthorized | Invalid credentials | Regenerate API key |
-| 403 Forbidden | Missing permissions | Request additional scopes |
-| 429 Rate Limited | Too many requests | Implement backoff |
-| SSL Error | Certificate issue | Update CA bundle |
+| Symptom | Possible Cause | Resolution | Documentation |
+|---------|----------------|------------|---------------|
+| Connection timeout | Firewall blocking | Whitelist IPs | [Network Guide](link) |
+| 401 Unauthorized | Invalid credentials | Regenerate API key | [Auth Troubleshooting](link) |
+| 403 Forbidden | Missing permissions | Request additional scopes | [Permissions Guide](link) |
+| 429 Rate Limited | Too many requests | Implement backoff | [Rate Limits](link) |
+| SSL Error | Certificate issue | Update CA bundle | [SSL Guide](link) |
 """
     ]),
     
@@ -995,18 +926,15 @@ curl -I https://api.{connector}.com/health
 | Timeout | N/A | Yes | 3 | Linear increase |
 
 ### Error Response Parsing
-```python
-# Provide error parsing code that extracts:
-# - Error code, message, details
-# - Retry-After header (if present)
-# - Request ID for support tickets
-```
 
-### Retry Strategy Implementation
-```python
-# Provide exponential backoff implementation
-# Include: jitter, max retries, circuit breaker
-```
+| Field | Location | Example Value |
+|-------|----------|---------------|
+| Error Code | response.error.code | "RATE_LIMITED" |
+| Error Message | response.error.message | "Too many requests" |
+| Retry-After | response.headers | 60 (seconds) |
+| Request ID | response.headers.x-request-id | "abc123" |
+
+📚 **Error Handling Guide**: See [Official Error Documentation](link)
 
 ### Recovery Procedures
 | Failure Scenario | Detection | Recovery Action | Escalation |
@@ -1052,16 +980,15 @@ curl -I https://api.{connector}.com/health
 | DataStale | freshness > 2 hours | P2 | Slack |
 | RateLimitCritical | rate_limit_hits > 100/min | P3 | Email |
 
-### Prometheus/Grafana Configuration
-```yaml
-# Provide example Prometheus alerting rules
-```
+### Monitoring Resources
 
-### Health Check Endpoint
-```python
-# Provide health check implementation that verifies:
-# - API connectivity, Auth validity, Recent sync success
-```
+| Tool | Use Case | Documentation |
+|------|----------|---------------|
+| Prometheus | Metrics collection | [Prometheus Docs](link) |
+| Grafana | Dashboards | [Grafana Docs](link) |
+| PagerDuty | Alerting | [PagerDuty Docs](link) |
+
+📚 **Monitoring Best Practices**: See [Official Operations Guide](link)
 """
     ]),
     
@@ -1074,22 +1001,21 @@ curl -I https://api.{connector}.com/health
 | (Document data lineage for key fields) |
 
 ### Audit Log Schema
-```json
-{
-  "event_id": "uuid",
-  "timestamp": "ISO 8601",
-  "event_type": "extraction|transformation|load|error",
-  "connector": "{connector}",
-  "object": "object_name",
-  "record_count": 1000,
-  "duration_ms": 5000,
-  "status": "success|failure",
-  "error_message": null,
-  "user": "service_account",
-  "source_system": "{connector}",
-  "target_system": "data_warehouse"
-}
-```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| event_id | UUID | Unique event identifier |
+| timestamp | ISO 8601 | Event timestamp |
+| event_type | string | extraction, transformation, load, or error |
+| connector | string | Connector name |
+| object | string | Object/table name |
+| record_count | integer | Number of records processed |
+| duration_ms | integer | Processing duration |
+| status | string | success or failure |
+| error_message | string | Error details if failed |
+| user | string | Service account used |
+| source_system | string | Source connector |
+| target_system | string | Destination system |
 
 ### Compliance Checklist
 | Requirement | Implementation | Verification |
@@ -2610,12 +2536,13 @@ CRITICAL OUTPUT FORMAT REQUIREMENTS:
 3. After the table, include:
    - Replication Strategy Notes: List objects by category (Full Load Only, Incremental, CDC-capable)
    - Delete Detection Summary: Group objects by delete method
-   - Sample Extraction Code: Python code example for 2-3 key objects with pagination
+   - Documentation Links: Table with links to official API docs, authentication, pagination, and code examples
    - Volume Considerations: Rate limits or pagination specific to high-volume objects
 
 4. Include inline citations like [web:1], [web:2] referencing web search results
 5. If Fivetran context is provided, prioritize that for the Fivetran Support column
 6. List at least 15-30 objects if available, or all objects if fewer exist
+7. DO NOT include code examples or code snippets - only provide links to official documentation
 """
         else:
             system_prompt = """You are an expert technical writer specializing in data integration and ETL connector development.
@@ -2722,12 +2649,14 @@ OUTPUT FORMAT REQUIRED:
 **Audit Log:** (list objects tracked via audit log)
 **No Delete Detection:** (list objects with hard deletes only)
 
-### 19.4 Sample Extraction Code
+### 19.4 Documentation Links
 
-```python
-# Python code example for extracting 2-3 key objects with pagination
-# Include example for detecting deleted records if applicable
-```
+| Topic | Official Documentation |
+|-------|----------------------|
+| API Reference | [Link to official API docs] |
+| Authentication Guide | [Link to auth docs] |
+| Pagination Guide | [Link to pagination docs] |
+| Code Examples | [Link to official code samples] |
 
 ### 19.5 Volume Considerations
 
@@ -2754,8 +2683,11 @@ Generate comprehensive markdown content for this section. Include:
 1. Clear subsection headers (e.g., {section.number}.1, {section.number}.2)
 2. Detailed explanations with citations
 3. Tables where appropriate (objects, limits, permissions)
-4. Code examples if relevant
+4. Links to official documentation for code examples (DO NOT include code snippets)
 5. Exact values from documentation (no placeholders)
+
+IMPORTANT: This is an INFORMATIONAL document. Do NOT include code examples or code snippets.
+Instead, provide links like: 📚 **Code Examples**: See [Official Docs](url)
 """
 
         try:
