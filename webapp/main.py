@@ -352,6 +352,33 @@ async def index(request: Request):
     })
 
 
+def _get_known_connector_methods(connector_name: str) -> list:
+    """Get known extraction methods for popular connectors."""
+    KNOWN_METHODS = {
+        "shopify": ["REST API", "GraphQL API", "Webhooks", "Bulk/Batch API"],
+        "github": ["REST API", "GraphQL API", "Webhooks"],
+        "stripe": ["REST API", "Webhooks"],
+        "salesforce": ["REST API", "SOAP/XML API", "Bulk/Batch API", "Webhooks"],
+        "hubspot": ["REST API", "Webhooks", "GraphQL API"],
+        "twilio": ["REST API", "Webhooks"],
+        "slack": ["REST API", "Webhooks"],
+        "zendesk": ["REST API", "Webhooks", "Bulk/Batch API"],
+        "jira": ["REST API", "Webhooks"],
+        "intercom": ["REST API", "Webhooks", "GraphQL API"],
+        "facebook": ["REST API", "GraphQL API", "Webhooks"],
+        "instagram": ["REST API", "GraphQL API", "Webhooks"],
+        "quickbooks": ["REST API", "Webhooks"],
+        "netsuite": ["REST API", "SOAP/XML API"],
+    }
+    name_lower = connector_name.lower().strip()
+    if name_lower in KNOWN_METHODS:
+        return KNOWN_METHODS[name_lower]
+    for key, methods in KNOWN_METHODS.items():
+        if key in name_lower or name_lower in key:
+            return methods
+    return []
+
+
 @app.get("/connectors/{connector_id}/view", response_class=HTMLResponse)
 async def view_research_page(request: Request, connector_id: str):
     """Render research document as a beautiful HTML page."""
@@ -368,6 +395,9 @@ async def view_research_page(request: Request, connector_id: str):
     content = connector_manager.get_research_document(connector_id)
     if not content:
         raise HTTPException(status_code=404, detail=f"Research document not found for '{connector_id}'")
+    
+    # Get known methods for this connector (supplements parsed methods)
+    known_methods = _get_known_connector_methods(connector.name)
     
     # Convert markdown to HTML with proper code block handling
     md = markdown.Markdown(extensions=['tables', 'fenced_code', 'toc', 'nl2br'])
@@ -397,7 +427,8 @@ async def view_research_page(request: Request, connector_id: str):
         "connector": connector,
         "content": html_content,
         "raw_content": content,
-        "toc_items": toc_items
+        "toc_items": toc_items,
+        "known_methods": known_methods  # Pass known methods to template
     })
 
 
