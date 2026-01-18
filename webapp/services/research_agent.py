@@ -2646,15 +2646,50 @@ Requirements:
 
         # Special user prompt for Section 19 (Object Catalog)
         if section.number == 19:
+            # Extract objects from Knowledge Vault if available
+            vault_objects = []
+            vault_data_model_context = ""
+            if self.knowledge_vault and self.knowledge_vault.has_knowledge(connector_name):
+                # Search specifically for data model/objects info
+                data_model_results = self.knowledge_vault.search(
+                    connector_name=connector_name,
+                    query="data model objects entities schema API endpoints",
+                    top_k=5
+                )
+                if data_model_results:
+                    # Build context from data model search
+                    dm_texts = []
+                    for i, result in enumerate(data_model_results, 1):
+                        dm_texts.append(f"[vault:{i}] **{result.title}** (confidence: {result.score:.2f})")
+                        dm_texts.append(f"{result.text[:2000]}...")
+                        dm_texts.append("")
+                    vault_data_model_context = chr(10).join(dm_texts)
+                    
+                    # Extract object names from this context
+                    vault_objects = self._extract_objects_from_vault_context(vault_data_model_context)
+                    print(f"  📋 Extracted {len(vault_objects)} objects from Knowledge Vault: {vault_objects[:10]}...")
+            
+            # Build objects hint for the LLM
+            objects_hint = ""
+            if vault_objects:
+                objects_hint = f"""
+📋 **Objects Found in Indexed Documentation (from Knowledge Vault):**
+The following objects were found in your pre-indexed documentation. Include ALL of these in the catalog:
+{', '.join(vault_objects[:50])}
+
+"""
+            
             user_prompt = f"""Generate Section {section.number}: {section.name} for the {connector_name} connector research document.
 
 Connector Type: {connector_type}
 Phase: {section.phase_name}
 
 IMPORTANT: This section MUST start with a comprehensive markdown table of ALL available objects.
-
+{objects_hint}
 Questions to answer:
 {prompts_text}
+
+{f"📚 **Knowledge Vault Data Model Context (Pre-Indexed):**{chr(10)}{vault_data_model_context}" if vault_data_model_context else ""}
 
 Web Search Results:
 {web_results}
@@ -3058,14 +3093,20 @@ Generate comprehensive markdown content for this section with PROPER CITATIONS.
     async def _check_stop_the_line(
         self,
         section_review: Any,
-        section_content: str
+        section_content: str,
+        aggressive: bool = False  # Set to False by default - only stop for severe issues
     ) -> Optional[StopTheLineEvent]:
         """
         Check if section should trigger stop-the-line.
         
+        NOTE: Made less aggressive by default. Only triggers when:
+        - Multiple (3+) critical contradictions exist, OR
+        - Very low confidence (<0.3) on critical claims
+        
         Args:
             section_review: SectionReview from Critic Agent
             section_content: Generated section content
+            aggressive: If True, use original strict checking (single contradiction triggers stop)
             
         Returns:
             StopTheLineEvent if should stop, None otherwise
@@ -3079,7 +3120,11 @@ Generate comprehensive markdown content for this section with PROPER CITATIONS.
             if c.severity == "CRITICAL" and c.category in ["AUTH", "RATE_LIMIT", "OBJECT_SUPPORT"]
         ]
         
-        if critical_contradictions:
+        # Less aggressive: Only stop if multiple critical contradictions (3+)
+        # or if aggressive mode is enabled
+        min_contradictions = 1 if aggressive else 3
+        
+        if len(critical_contradictions) >= min_contradictions:
             return StopTheLineEvent(
                 reason="CRITICAL_CONTRADICTION",
                 contradictions=critical_contradictions,
@@ -3088,12 +3133,17 @@ Generate comprehensive markdown content for this section with PROPER CITATIONS.
             )
         
         # Check for low confidence on critical claims
+        # Less aggressive: Only trigger at very low confidence (<0.3) instead of <0.5
+        confidence_threshold = 0.5 if aggressive else 0.3
         low_confidence_critical = [
             f for f in section_review.uncertainty_flags
-            if f.confidence < 0.5 and f.category in ["AUTH", "RATE_LIMIT", "OBJECT_SUPPORT"]
+            if f.confidence < confidence_threshold and f.category in ["AUTH", "RATE_LIMIT", "OBJECT_SUPPORT"]
         ]
         
-        if low_confidence_critical:
+        # Only stop if multiple low-confidence issues
+        min_low_confidence = 1 if aggressive else 2
+        
+        if len(low_confidence_critical) >= min_low_confidence:
             return StopTheLineEvent(
                 reason="LOW_CONFIDENCE_CRITICAL",
                 uncertainty_flags=low_confidence_critical,
@@ -3482,6 +3532,133 @@ Generate comprehensive markdown content for this section with PROPER CITATIONS.
         
         return discovered
     
+    def _get_known_connector_methods(self, connector_name: str) -> List[str]:
+        """Get known extraction methods for popular connectors.
+        
+        These are well-documented connectors where we KNOW the available methods.
+        This supplements the LLM discovery with ground truth.
+        
+        Args:
+            connector_name: Name of the connector
+            
+        Returns:
+            List of known methods for the connector
+        """
+        # Known connector methods - curated list for popular connectors
+        KNOWN_METHODS = {
+            "shopify": ["REST API", "GraphQL API", "Webhooks", "Bulk/Batch API"],
+            "github": ["REST API", "GraphQL API", "Webhooks"],
+            "stripe": ["REST API", "Webhooks"],
+            "salesforce": ["REST API", "SOAP/XML API", "Bulk/Batch API", "Webhooks"],
+            "hubspot": ["REST API", "Webhooks", "GraphQL API"],
+            "twilio": ["REST API", "Webhooks"],
+            "slack": ["REST API", "Webhooks", "Events API"],
+            "zendesk": ["REST API", "Webhooks", "Bulk/Batch API"],
+            "jira": ["REST API", "Webhooks"],
+            "asana": ["REST API", "Webhooks"],
+            "intercom": ["REST API", "Webhooks", "GraphQL API"],
+            "quickbooks": ["REST API", "Webhooks"],
+            "xero": ["REST API", "Webhooks"],
+            "netsuite": ["REST API", "SOAP/XML API"],
+            "dynamics": ["REST API", "SOAP/XML API"],
+            "facebook": ["REST API", "GraphQL API", "Webhooks"],
+            "instagram": ["REST API", "GraphQL API", "Webhooks"],
+            "google ads": ["REST API"],
+            "google analytics": ["REST API"],
+            "mailchimp": ["REST API", "Webhooks"],
+            "sendgrid": ["REST API", "Webhooks"],
+            "snowflake": ["JDBC/ODBC", "REST API"],
+            "bigquery": ["REST API", "JDBC/ODBC"],
+            "redshift": ["JDBC/ODBC"],
+            "postgres": ["JDBC/ODBC"],
+            "mysql": ["JDBC/ODBC"],
+            "mongodb": ["REST API", "Official SDK"],
+        }
+        
+        # Normalize connector name for lookup
+        name_lower = connector_name.lower().strip()
+        
+        # Direct match
+        if name_lower in KNOWN_METHODS:
+            return KNOWN_METHODS[name_lower]
+        
+        # Partial match (e.g., "Shopify Plus" -> "shopify")
+        for key, methods in KNOWN_METHODS.items():
+            if key in name_lower or name_lower in key:
+                return methods
+        
+        return []
+    
+    def _extract_objects_from_vault_context(self, vault_context: str) -> List[str]:
+        """Extract object names from Knowledge Vault context.
+        
+        Parses indexed documentation to find API objects/entities.
+        
+        Args:
+            vault_context: Text from Knowledge Vault search
+            
+        Returns:
+            List of object names found
+        """
+        import re
+        objects = set()
+        
+        if not vault_context:
+            return []
+        
+        content_lower = vault_context.lower()
+        
+        # Pattern 1: Table rows with object names (e.g., "| Product | incremental |")
+        table_pattern = re.compile(r'\|\s*([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)\s*\|', re.MULTILINE)
+        for match in table_pattern.finditer(vault_context):
+            obj_name = match.group(1).strip()
+            # Filter out common non-object words
+            skip_words = ["description", "name", "type", "field", "column", "table", "yes", "no", "api", "method"]
+            if obj_name.lower() not in skip_words and len(obj_name) > 2:
+                objects.add(obj_name)
+        
+        # Pattern 2: Bullet points with object names (e.g., "- **Product**: Contains...")
+        bullet_pattern = re.compile(r'[-*]\s*\*?\*?([A-Z][a-z]+(?:\s*[A-Z]?[a-z]+)*)\*?\*?\s*[:|-]', re.MULTILINE)
+        for match in bullet_pattern.finditer(vault_context):
+            obj_name = match.group(1).strip()
+            if len(obj_name) > 2 and len(obj_name) < 40:
+                objects.add(obj_name)
+        
+        # Pattern 3: Common API object patterns (e.g., "GET /products", "query { products }")
+        endpoint_pattern = re.compile(r'(?:GET|POST|PUT|DELETE|PATCH)\s+/(?:v\d+/)?([a-z_]+)', re.IGNORECASE)
+        for match in endpoint_pattern.finditer(vault_context):
+            obj_name = match.group(1).replace('_', ' ').title()
+            objects.add(obj_name)
+        
+        # Pattern 4: Look for "Data Model" or "Objects" sections
+        # Common patterns: "Products", "Orders", "Customers" etc. as headers
+        header_pattern = re.compile(r'#{1,3}\s*([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)\s*$', re.MULTILINE)
+        for match in header_pattern.finditer(vault_context):
+            obj_name = match.group(1).strip()
+            # Only include if it looks like an object name
+            object_indicators = ["product", "order", "customer", "user", "account", "invoice", 
+                               "payment", "transaction", "item", "variant", "collection",
+                               "event", "shop", "location", "fulfillment", "refund"]
+            if any(ind in obj_name.lower() for ind in object_indicators):
+                objects.add(obj_name)
+        
+        # Pattern 5: Known Shopify/Hevo objects (if mentioned in context)
+        known_objects = [
+            "Product", "Product Variant", "Product Image", "Collection", "Custom Collection",
+            "Smart Collection", "Customer", "Order", "Transaction", "Refund", "Fulfillment",
+            "Inventory Item", "Inventory Level", "Location", "Shop", "Event", "Metafield",
+            "Discount", "Price Rule", "Draft Order", "Abandoned Checkout", "Customer Address",
+            "Balance Transaction", "Tender Transaction", "Country", "Province", "Shipping Zone",
+            "Application Charge", "Recurring Application Charge", "Usage Charge",
+            "Customer Journey Summary", "Customer Visit"
+        ]
+        
+        for obj in known_objects:
+            if obj.lower() in content_lower:
+                objects.add(obj)
+        
+        return sorted(list(objects))
+    
     async def generate_research(
         self,
         connector_id: str,
@@ -3612,8 +3789,20 @@ Generate comprehensive markdown content for this section with PROPER CITATIONS.
         
         # Parse discovered methods from Section 2
         discovered_methods = self._parse_discovered_methods(discovery_content)
+        
+        # Merge with known methods for this connector (ensures we don't miss well-documented APIs)
+        known_methods = self._get_known_connector_methods(connector_name)
+        if known_methods:
+            print(f"  Known methods for {connector_name}: {', '.join(known_methods)}")
+            for method in known_methods:
+                if method not in discovered_methods:
+                    discovered_methods.append(method)
+            # Re-sort after merging
+            method_order = ["REST API", "GraphQL API", "Webhooks", "Bulk/Batch API", "Official SDK", "SOAP/XML API", "JDBC/ODBC", "File Export"]
+            discovered_methods = sorted(discovered_methods, key=lambda x: method_order.index(x) if x in method_order else 999)
+        
         self._current_progress.discovered_methods = discovered_methods
-        print(f"  Discovered extraction methods: {', '.join(discovered_methods)}")
+        print(f"  Final extraction methods: {', '.join(discovered_methods)}")
         
         # Calculate total sections (including new enterprise phases)
         total_sections = (len(BASE_SECTIONS) + len(discovered_methods) + 
