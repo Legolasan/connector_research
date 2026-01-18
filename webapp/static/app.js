@@ -321,15 +321,40 @@ function dashboard() {
         async pollResearchProgress(connectorId) {
             const poll = async () => {
                 try {
-                    const response = await fetch(`/api/connectors/${connectorId}/status`);
-                    if (response.ok) {
-                        const status = await response.json();
+                    // Poll both endpoints for comprehensive progress
+                    const [statusResponse, dagResponse] = await Promise.all([
+                        fetch(`/api/connectors/${connectorId}/status`),
+                        fetch(`/api/connectors/${connectorId}/progress`).catch(() => null)
+                    ]);
+                    
+                    if (statusResponse.ok) {
+                        const status = await statusResponse.json();
                         
                         // Update local connector
                         const connector = this.connectors.find(c => c.id === connectorId);
                         if (connector) {
                             connector.status = status.status;
                             connector.progress = status.progress;
+                            
+                            // Merge DAG progress if available
+                            if (dagResponse && dagResponse.ok) {
+                                const dagProgress = await dagResponse.json();
+                                if (dagProgress.status !== 'not_available') {
+                                    connector.dagProgress = dagProgress;
+                                    // Use DAG progress percentage if available
+                                    if (dagProgress.progress !== undefined) {
+                                        connector.progress.percentage = dagProgress.progress;
+                                    }
+                                    // Add phase info
+                                    if (dagProgress.phases) {
+                                        connector.progress.phases = dagProgress.phases;
+                                    }
+                                    // Add last event as current section name
+                                    if (dagProgress.last_event) {
+                                        connector.progress.current_section_name = dagProgress.last_event.message;
+                                    }
+                                }
+                            }
                         }
                         
                         // Continue polling if still running

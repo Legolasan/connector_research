@@ -46,3 +46,7 @@ nltk>=3.8
 # Security
 slowapi>=0.1.9
 python-multipart>=0.0.6
+
+# Task Queue and Caching
+celery[redis]>=5.3.6
+redis>=5.0.1

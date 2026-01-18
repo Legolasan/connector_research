@@ -981,6 +981,43 @@ async def get_research_status(
     }
 
 
+@app.get("/api/connectors/{connector_id}/progress")
+@limiter.limit("100/minute")
+async def get_research_progress_dag(
+    request: Request,
+    connector_id: str,
+    api_key: str = Depends(verify_api_key)
+):
+    """
+    Get structured progress of DAG-based research generation.
+    
+    Returns detailed progress including:
+    - Phase-by-phase progress (web_search, fetch, summarize, synthesis)
+    - Recent events
+    - Convergence status
+    - Fact counts by category
+    """
+    try:
+        from services.research_dag_orchestrator import get_research_progress
+        
+        progress = get_research_progress(connector_id)
+        return progress
+        
+    except ImportError:
+        # Fallback if DAG system not available
+        return {
+            "status": "not_available",
+            "message": "DAG-based research not configured",
+            "progress": 0
+        }
+    except Exception as e:
+        return {
+            "status": "error",
+            "message": str(e),
+            "progress": 0
+        }
+
+
 @app.post("/api/connectors/{connector_id}/cancel")
 @limiter.limit("20/minute")
 async def cancel_research(

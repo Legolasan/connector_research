@@ -172,6 +172,52 @@
                                     <span x-text="connector.progress?.current_section_name || 'Initializing...'"></span>
                                 </div>
                                 
+                                <!-- DAG Phases Progress -->
+                                <div x-show="connector.dagProgress?.phases" class="mt-3 space-y-1.5">
+                                    <div class="text-xs text-gray-500 mb-2">Research Phases</div>
+                                    <template x-for="(phase, phaseName) in (connector.dagProgress?.phases || {})" :key="phaseName">
+                                        <div class="flex items-center gap-2 text-xs">
+                                            <!-- Phase icon -->
+                                            <div class="w-4 h-4 flex items-center justify-center flex-shrink-0">
+                                                <template x-if="phase.status === 'completed'">
+                                                    <svg class="w-3.5 h-3.5 text-green-400" fill="currentColor" viewBox="0 0 20 20">
+                                                        <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/>
+                                                    </svg>
+                                                </template>
+                                                <template x-if="phase.status === 'in_progress'">
+                                                    <div class="w-3 h-3 border-2 border-yellow-400 border-t-transparent rounded-full animate-spin"></div>
+                                                </template>
+                                                <template x-if="phase.status === 'pending'">
+                                                    <div class="w-2.5 h-2.5 bg-gray-600 rounded-full"></div>
+                                                </template>
+                                            </div>
+                                            <!-- Phase name -->
+                                            <span class="flex-1 capitalize" 
+                                                  :class="{
+                                                      'text-green-400': phase.status === 'completed',
+                                                      'text-yellow-400': phase.status === 'in_progress',
+                                                      'text-gray-500': phase.status === 'pending'
+                                                  }"
+                                                  x-text="phaseName.replace('_', ' ')">
+                                            </span>
+                                            <!-- Phase count -->
+                                            <span class="text-gray-600" 
+                                                  x-text="phase.completed + '/' + phase.total">
+                                            </span>
+                                        </div>
+                                    </template>
+                                </div>
+                                
+                                <!-- DAG Stats -->
+                                <div x-show="connector.dagProgress?.stats?.total_facts > 0" class="mt-2 flex items-center gap-3 text-xs">
+                                    <span class="text-gray-500">
+                                        <span class="text-cyan-400 font-medium" x-text="connector.dagProgress?.stats?.total_facts || 0"></span> facts
+                                    </span>
+                                    <span class="text-gray-500">
+                                        <span class="text-purple-400 font-medium" x-text="connector.dagProgress?.stats?.total_sources || 0"></span> sources
+                                    </span>
+                                </div>
+                                
                                 <!-- Confidence Score -->
                                 <div x-show="connector.progress?.overall_confidence !== undefined && connector.progress?.overall_confidence > 0" 
                                      class="flex items-center justify-between text-xs mt-2">
