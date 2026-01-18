@@ -221,9 +221,137 @@ EXTRACTION_METHODS = [
 ]
 
 
+# SDK section template - emphasizes Java for Hevo integration
+def create_sdk_section(method_name: str, section_number: int) -> ResearchSection:
+    """Create an SDK-specific section with Java emphasis for Hevo integration."""
+    return ResearchSection(
+        number=section_number,
+        name=f"{method_name} Deep Dive",
+        phase=2,
+        phase_name="Extraction Methods",
+        is_method_section=True,
+        method_name=method_name,
+        prompts=[
+            f"""Generate a comprehensive SDK/Client Library RUNBOOK for {{connector}}.
+
+**CRITICAL: Java SDK Priority for Hevo Integration**
+Since Hevo Data uses Java, prioritize Java SDK discovery and documentation:
+
+## Official SDK Deep Dive
+
+### 1. Java SDK Discovery (HIGHEST PRIORITY)
+
+**1.1 Official Java SDK**
+- Check Maven Central (mvnrepository.com) for official Java SDK
+- Check GitHub for official {{connector}} Java client
+- Note Maven/Gradle coordinates if available
+
+| SDK Type | Package | Maven Central | GitHub | Status |
+|----------|---------|---------------|--------|--------|
+| Official Java SDK | (groupId:artifactId) | (link) | (link) | ✓/✗ |
+| Community Java | (if any) | (link) | (link) | |
+
+**1.2 If No Java SDK Exists**
+Provide clear guidance:
+- Recommended HTTP client for Java (OkHttp, Apache HttpClient, Java 11+ HttpClient)
+- Code example for direct REST/GraphQL API calls from Java
+- Any code generation options (OpenAPI Generator, GraphQL codegen)
+
+**1.3 Java Integration Code**
+```java
+// Complete Java example - can be copied directly
+// Include: dependencies, authentication, basic data extraction
+```
+
+### 2. Other Language SDKs
+
+| Language | Package | Version | Docs | Maintenance Status |
+|----------|---------|---------|------|-------------------|
+| Python | | | | |
+| Node.js | | | | |
+| Ruby | | | | |
+| Go | | | | |
+| PHP | | | | |
+
+### 3. SDK Installation & Setup
+
+**3.1 Java Setup (Primary)**
+```xml
+<!-- Maven dependency -->
+<dependency>
+    <groupId>...</groupId>
+    <artifactId>...</artifactId>
+    <version>...</version>
+</dependency>
+```
+
+```groovy
+// Gradle dependency
+implementation '...'
+```
+
+**3.2 Authentication via SDK**
+```java
+// Java authentication setup
+// Include all supported auth methods
+```
+
+### 4. SDK Capabilities Matrix
+
+| Capability | Java SDK | Python SDK | Node.js SDK |
+|------------|----------|------------|-------------|
+| OAuth 2.0 | ✓/✗ | ✓/✗ | ✓/✗ |
+| Pagination | ✓/✗ | ✓/✗ | ✓/✗ |
+| Rate Limiting | ✓/✗ | ✓/✗ | ✓/✗ |
+| Bulk Operations | ✓/✗ | ✓/✗ | ✓/✗ |
+| Retry Logic | ✓/✗ | ✓/✗ | ✓/✗ |
+| Webhooks | ✓/✗ | ✓/✗ | ✓/✗ |
+
+### 5. Java Implementation Patterns
+
+**5.1 Full Data Extraction (Java)**
+```java
+// Complete working code for full data extraction
+// Include pagination handling
+```
+
+**5.2 Incremental Sync (Java)**
+```java
+// Incremental extraction with cursor management
+```
+
+**5.3 Error Handling (Java)**
+```java
+// Exception handling patterns
+// Include rate limit handling, retries
+```
+
+### 6. SDK Limitations & Workarounds
+
+| SDK | Known Limitation | Workaround |
+|-----|-----------------|------------|
+| | | |
+
+### 7. Recommendation for Hevo Integration
+
+Based on the SDK analysis, recommend:
+1. **Best approach for Java integration** (SDK vs. direct API)
+2. **Required dependencies** (list all Maven/Gradle deps)
+3. **Implementation complexity** (Low/Medium/High)
+4. **Maintenance considerations** (SDK version updates, deprecations)
+"""
+        ]
+    )
+
+
 # Method section template - generated dynamically for each discovered method (Runbook Format)
 def create_method_section(method_name: str, section_number: int) -> ResearchSection:
     """Create a deep-dive section for a specific extraction method in runbook format."""
+    
+    # Special handling for SDK section - emphasize Java for Hevo integration
+    if "SDK" in method_name:
+        return create_sdk_section(method_name, section_number)
+    
     return ResearchSection(
         number=section_number,
         name=f"{method_name} Deep Dive",
@@ -412,6 +540,14 @@ Research: Does {connector} have bulk data export, async jobs, or batch operation
 Research: Does {connector} provide official SDKs or client libraries?
 - If YES: State "✓ Available", list languages (Python, Node.js, Ruby, Java, etc.)
 - If NO: State "✗ Not Available"
+
+**IMPORTANT: Java SDK Discovery (Hevo Integration)**
+Since Hevo uses Java, prioritize finding Java SDKs:
+1. Search for official Java SDK (check Maven Central: mvnrepository.com/{connector})
+2. If no official SDK, search GitHub for community Java clients
+3. Check if official REST/GraphQL API can be called directly from Java (recommended)
+4. If no Java SDK exists, explicitly state: "No Java SDK - use REST API with HTTP client (e.g., OkHttp, HttpClient)"
+5. Note any alternative JVM languages supported (Kotlin, Scala)
 
 ### 6. SOAP/XML API
 Research: Does {connector} have a SOAP or XML-based API?
@@ -1745,8 +1881,11 @@ class ResearchAgent:
                 f"{connector_name} paginated responses handling documentation",
             ],
             "sdk": [
-                f"{connector_name} official SDK client library Python Node.js Ruby",
-                f"{connector_name} API client libraries official packages",
+                # Prioritize Java SDK for Hevo integration
+                f"{connector_name} Java SDK Maven Central official client library",
+                f"{connector_name} Java API client library GitHub",
+                f"site:mvnrepository.com {connector_name}",
+                f"{connector_name} official SDK client library",
             ],
             "fivetran": [
                 f"Fivetran {connector_name} connector documentation schema",

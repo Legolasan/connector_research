@@ -53,6 +53,7 @@ class KnowledgeSourceType(str, Enum):
     CHANGELOG = "changelog"               # API changelogs, release notes
     FIVETRAN_DOCS = "fivetran_docs"      # Fivetran connector documentation
     AIRBYTE_DOCS = "airbyte_docs"        # Airbyte connector documentation
+    GITHUB_IMPLEMENTATION = "github_implementation"  # GitHub code implementation
     CUSTOM = "custom"                     # User-provided documentation
 
 
@@ -923,6 +924,170 @@ class KnowledgeVault:
             await asyncio.sleep(0.01)
         
         return self.complete_bulk_upload(job_id)
+    
+    def index_text(
+        self,
+        connector_name: str,
+        title: str,
+        content: str,
+        source_type: str = "official_docs",
+        source_url: Optional[str] = None
+    ) -> VaultDocument:
+        """
+        Convenience method to index plain text content.
+        
+        Args:
+            connector_name: Name of the connector
+            title: Document title
+            content: Text content to index
+            source_type: Type of source as string
+            source_url: Optional source URL
+            
+        Returns:
+            VaultDocument with indexing stats
+        """
+        # Convert string source_type to enum
+        try:
+            source_enum = KnowledgeSourceType(source_type)
+        except ValueError:
+            source_enum = KnowledgeSourceType.CUSTOM
+        
+        return self.index_document(
+            connector_name=connector_name,
+            title=title,
+            content=content,
+            source_type=source_enum,
+            source_url=source_url
+        )
+    
+    def index_github_repo(
+        self,
+        connector_name: str,
+        repo_path: str,
+        source_type: str = "github_implementation"
+    ) -> Dict[str, Any]:
+        """
+        Index relevant files from a cloned GitHub repository.
+        
+        Indexes:
+        - Java files (.java) - Hevo uses Java
+        - Python files (.py)
+        - JavaScript/TypeScript files (.js, .ts)
+        - README files
+        - Documentation files (docs/, *.md)
+        - Configuration files (pom.xml, package.json, etc.)
+        
+        Args:
+            connector_name: Name of the connector
+            repo_path: Path to the cloned repository
+            source_type: Type of source
+            
+        Returns:
+            Dictionary with indexing statistics
+        """
+        from pathlib import Path
+        
+        repo_dir = Path(repo_path)
+        if not repo_dir.exists():
+            print(f"⚠ GitHub repo path does not exist: {repo_path}")
+            return {"error": f"Path not found: {repo_path}", "files_indexed": 0}
+        
+        # File patterns to index (prioritize Java for Hevo)
+        patterns = [
+            # Java files (highest priority for Hevo)
+            ("**/*.java", "java_source"),
+            # Python files
+            ("**/*.py", "python_source"),
+            # JavaScript/TypeScript
+            ("**/*.js", "javascript_source"),
+            ("**/*.ts", "typescript_source"),
+            # Documentation
+            ("**/README*", "readme"),
+            ("**/README.md", "readme"),
+            ("**/*.md", "documentation"),
+            ("**/docs/**/*.md", "documentation"),
+            # Configuration
+            ("**/pom.xml", "maven_config"),
+            ("**/build.gradle", "gradle_config"),
+            ("**/package.json", "npm_config"),
+        ]
+        
+        # Directories to skip
+        skip_dirs = {
+            'node_modules', '__pycache__', '.git', 'target', 'build', 
+            'dist', '.gradle', '.mvn', 'venv', '.venv', '.idea', '.vscode'
+        }
+        
+        stats = {
+            "files_indexed": 0,
+            "total_chunks": 0,
+            "files_by_type": {},
+            "errors": []
+        }
+        
+        try:
+            source_enum = KnowledgeSourceType(source_type)
+        except ValueError:
+            source_enum = KnowledgeSourceType.GITHUB_IMPLEMENTATION
+        
+        indexed_files = set()  # Track to avoid duplicates
+        
+        print(f"📦 Indexing GitHub repo: {repo_path}")
+        
+        for pattern, file_type in patterns:
+            for file_path in repo_dir.glob(pattern):
+                # Skip if already indexed
+                if str(file_path) in indexed_files:
+                    continue
+                
+                # Skip directories we don't want
+                if any(skip_dir in file_path.parts for skip_dir in skip_dirs):
+                    continue
+                
+                # Skip non-files
+                if not file_path.is_file():
+                    continue
+                
+                # Skip very large files (> 500KB)
+                if file_path.stat().st_size > 500 * 1024:
+                    continue
+                
+                try:
+                    # Read file content
+                    content = file_path.read_text(encoding='utf-8', errors='ignore')
+                    
+                    # Skip empty files
+                    if not content.strip():
+                        continue
+                    
+                    # Create relative path for title
+                    relative_path = file_path.relative_to(repo_dir)
+                    title = f"{connector_name} - {relative_path}"
+                    
+                    # Index the file
+                    doc = self.index_document(
+                        connector_name=connector_name,
+                        title=title,
+                        content=content,
+                        source_type=source_enum,
+                        source_url=f"github://{relative_path}"
+                    )
+                    
+                    stats["files_indexed"] += 1
+                    stats["total_chunks"] += doc.chunk_count
+                    stats["files_by_type"][file_type] = stats["files_by_type"].get(file_type, 0) + 1
+                    indexed_files.add(str(file_path))
+                    
+                    print(f"  ✓ Indexed: {relative_path} ({doc.chunk_count} chunks)")
+                    
+                except Exception as e:
+                    error_msg = f"Failed to index {file_path}: {str(e)}"
+                    stats["errors"].append(error_msg)
+                    print(f"  ⚠ {error_msg}")
+        
+        print(f"📦 GitHub indexing complete: {stats['files_indexed']} files, {stats['total_chunks']} chunks")
+        
+        return stats
 
 
 # Singleton instance

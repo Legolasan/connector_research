@@ -704,6 +704,19 @@ async def generate_research(
                 extracted = await github_cloner.clone_and_extract(connector.github_url, connector_id)
                 if extracted:
                     github_context = extracted.to_dict()
+                    
+                    # Auto-index GitHub code into Knowledge Vault for research context
+                    if knowledge_vault and extracted.clone_path:
+                        try:
+                            print(f"📦 Auto-indexing GitHub repo into Knowledge Vault...")
+                            index_stats = knowledge_vault.index_github_repo(
+                                connector_name=connector.name,
+                                repo_path=extracted.clone_path,
+                                source_type="github_implementation"
+                            )
+                            print(f"  ✓ Indexed {index_stats.get('files_indexed', 0)} files into Knowledge Vault")
+                        except Exception as e:
+                            print(f"  ⚠ Failed to index GitHub repo to Knowledge Vault: {e}")
                 else:
                     print(f"⚠ GitHub cloning skipped for {connector.name}, continuing with web search only")
             
@@ -750,6 +763,34 @@ async def generate_research(
                     manual_text=manual_text
                 )
                 fivetran_context = fivetran_result.to_dict()
+                
+                # Auto-index Fivetran docs into Knowledge Vault
+                if knowledge_vault and fivetran_result:
+                    try:
+                        print(f"📚 Auto-indexing Fivetran docs into Knowledge Vault...")
+                        
+                        # Combine content from all Fivetran sections
+                        combined_content = ""
+                        
+                        if fivetran_result.setup:
+                            combined_content += f"## Fivetran Setup Guide\n\n{fivetran_result.setup.raw_content}\n\n"
+                        if fivetran_result.overview:
+                            combined_content += f"## Fivetran Connector Overview\n\n{fivetran_result.overview.raw_content}\n\n"
+                        if fivetran_result.schema:
+                            combined_content += f"## Fivetran Schema Information\n\n{fivetran_result.schema.raw_content}\n\n"
+                        
+                        if combined_content.strip():
+                            knowledge_vault.index_text(
+                                connector_name=connector.name,
+                                title=f"Fivetran {connector.name} Documentation",
+                                content=combined_content,
+                                source_type="fivetran_docs"
+                            )
+                            print(f"  ✓ Indexed Fivetran docs into Knowledge Vault")
+                        else:
+                            print(f"  ⚠ No Fivetran content to index")
+                    except Exception as e:
+                        print(f"  ⚠ Failed to index Fivetran docs to Knowledge Vault: {e}")
             
             # Update status to researching
             connector_manager.update_connector(connector_id, status=ConnectorStatus.RESEARCHING.value)
