@@ -223,20 +223,75 @@ def init_database() -> bool:
         if PGVECTOR_EXTENSION_AVAILABLE and not hasattr(DocumentChunkModel, 'embedding'):
             DocumentChunkModel.embedding = Column(Vector(EMBEDDING_DIMENSION), nullable=True)
         
-        # Verify database tables exist (but don't create them - that's handled by Alembic migrations)
+        # Verify database tables exist - auto-create if fresh database
         try:
             with engine.connect() as conn:
                 # Check if tables exist
                 tables_exist = conn.execute(text("""
                     SELECT EXISTS (
                         SELECT FROM information_schema.tables 
-                        WHERE table_name IN ('connectors', 'research_documents', 'document_chunks')
+                        WHERE table_name = 'connectors'
                     )
                 """)).scalar()
                 
                 if not tables_exist:
-                    print("⚠ Database tables not found. Run migrations first: python migrate.py upgrade")
-                    print("  → For existing databases, run: alembic stamp head")
+                    print("⚠ Database tables not found. Attempting to create them...")
+                    
+                    # Try to run Alembic migrations
+                    try:
+                        import subprocess
+                        import os as _os
+                        
+                        # Get the project root directory
+                        current_dir = _os.path.dirname(_os.path.abspath(__file__))
+                        project_root = _os.path.dirname(_os.path.dirname(current_dir))
+                        
+                        print(f"  → Running Alembic migrations from {project_root}...")
+                        result = subprocess.run(
+                            ["alembic", "upgrade", "head"],
+                            cwd=project_root,
+                            capture_output=True,
+                            text=True,
+                            timeout=60
+                        )
+                        
+                        if result.returncode == 0:
+                            print("✓ Database migrations completed successfully")
+                            print(result.stdout)
+                        else:
+                            print(f"⚠ Alembic migration failed: {result.stderr}")
+                            # Fall back to creating tables directly
+                            print("  → Falling back to direct table creation...")
+                            Base.metadata.create_all(bind=engine)
+                            print("✓ Tables created directly via SQLAlchemy")
+                            
+                    except FileNotFoundError:
+                        print("  → Alembic not found, creating tables directly...")
+                        Base.metadata.create_all(bind=engine)
+                        print("✓ Tables created directly via SQLAlchemy")
+                    except subprocess.TimeoutExpired:
+                        print("  → Migration timed out, creating tables directly...")
+                        Base.metadata.create_all(bind=engine)
+                        print("✓ Tables created directly via SQLAlchemy")
+                    except Exception as mig_error:
+                        print(f"  → Migration error: {mig_error}")
+                        print("  → Creating tables directly...")
+                        Base.metadata.create_all(bind=engine)
+                        print("✓ Tables created directly via SQLAlchemy")
+                    
+                    # Verify tables were created
+                    tables_exist = conn.execute(text("""
+                        SELECT EXISTS (
+                            SELECT FROM information_schema.tables 
+                            WHERE table_name = 'connectors'
+                        )
+                    """)).scalar()
+                    
+                    if tables_exist:
+                        print("✓ Database tables verified after creation")
+                    else:
+                        print("❌ Failed to create database tables")
+                        return False
                 else:
                     print("✓ Database tables verified")
                     
