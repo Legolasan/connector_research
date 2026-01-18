@@ -1586,11 +1586,12 @@ class ResearchAgent:
         }
         return type_map.get(connector_type.lower(), connector_type.upper())
     
-    async def _web_search(self, query: str) -> str:
-        """Perform web search using Tavily.
+    async def _web_search(self, query: str, connector_name: str = "") -> str:
+        """Perform web search using Tavily with official domain prioritization.
         
         Args:
             query: Search query
+            connector_name: Name of connector to prioritize official docs
             
         Returns:
             Search results as formatted text
@@ -1602,11 +1603,33 @@ class ResearchAgent:
             from tavily import TavilyClient
             tavily = TavilyClient(api_key=self.tavily_api_key)
             
-            response = tavily.search(
-                query=query,
-                search_depth="advanced",
-                max_results=5
-            )
+            # Build list of official domains to prioritize
+            include_domains = None
+            if connector_name:
+                name_lower = connector_name.lower().replace(" ", "").replace("-", "")
+                # Common patterns for official documentation sites
+                include_domains = [
+                    f"{name_lower}.dev",              # shopify.dev
+                    f"developers.{name_lower}.com",   # developers.facebook.com
+                    f"developer.{name_lower}.com",    # developer.salesforce.com
+                    f"{name_lower}.com",              # shopify.com (may have /docs)
+                    f"docs.{name_lower}.com",         # docs.stripe.com
+                    f"api.{name_lower}.com",          # api documentation
+                    f"help.{name_lower}.com",         # help centers
+                ]
+            
+            # Make the search request with domain prioritization
+            search_params = {
+                "query": query,
+                "search_depth": "advanced",
+                "max_results": 8  # Increased from 5 for better coverage
+            }
+            
+            # Add include_domains if we have them
+            if include_domains:
+                search_params["include_domains"] = include_domains
+            
+            response = tavily.search(**search_params)
             
             results = []
             for i, result in enumerate(response.get('results', []), 1):
@@ -1674,6 +1697,73 @@ class ResearchAgent:
             return 'BLOG'
         
         return 'OTHER'
+    
+    def _get_section_search_queries(self, connector_name: str, section_name: str) -> List[str]:
+        """Get section-specific search queries for better results.
+        
+        Args:
+            connector_name: Name of the connector (e.g., "Shopify")
+            section_name: Name of the section being researched
+            
+        Returns:
+            List of targeted search queries
+        """
+        section_lower = section_name.lower()
+        
+        # Section-specific search strategies with targeted terminology
+        search_strategies = {
+            "authentication": [
+                f"{connector_name} authentication methods OAuth session token API key",
+                f"{connector_name} authorization access token official documentation",
+            ],
+            "rate limit": [
+                f"{connector_name} API rate limits throttling requests per second",
+                f"{connector_name} rate limiting quota best practices",
+            ],
+            "extraction": [
+                f"{connector_name} API endpoints REST GraphQL bulk operations",
+                f"{connector_name} data extraction methods official documentation",
+            ],
+            "methods discovery": [
+                f"{connector_name} API REST GraphQL webhooks bulk export",
+                f"{connector_name} available APIs official documentation developer guide",
+            ],
+            "object": [
+                f"{connector_name} API resources entities objects schema",
+                f"{connector_name} data model available objects documentation",
+            ],
+            "webhook": [
+                f"{connector_name} webhooks event subscriptions notifications",
+                f"{connector_name} webhook events payload format official docs",
+            ],
+            "error": [
+                f"{connector_name} API error codes error handling",
+                f"{connector_name} error responses troubleshooting documentation",
+            ],
+            "pagination": [
+                f"{connector_name} API pagination cursor offset limit",
+                f"{connector_name} paginated responses handling documentation",
+            ],
+            "sdk": [
+                f"{connector_name} official SDK client library Python Node.js Ruby",
+                f"{connector_name} API client libraries official packages",
+            ],
+            "fivetran": [
+                f"Fivetran {connector_name} connector documentation schema",
+                f"Fivetran {connector_name} setup sync configuration",
+            ],
+        }
+        
+        # Find matching strategy based on section name keywords
+        for keyword, queries in search_strategies.items():
+            if keyword in section_lower:
+                return queries
+        
+        # Default: generic but still connector-specific query
+        return [
+            f"{connector_name} {section_name} official API documentation",
+            f"{connector_name} {section_name} developer guide",
+        ]
     
     async def _verify_with_multiple_sources(
         self,
@@ -1767,7 +1857,7 @@ class ResearchAgent:
         # Search each query and classify results
         for query in queries[:2]:  # Limit to 2 queries to manage API costs
             try:
-                results = await self._web_search(query)
+                results = await self._web_search(query, connector_name=connector_name)
                 for line in results.split('\n'):
                     if line.startswith('[web:'):
                         # Extract source type from the line
@@ -2207,8 +2297,16 @@ Confidence: {whisper.confidence}%
                 )
         
         # 🔍 STEP 3: Fall back to web search for additional context
-        search_query = f"{connector_name} API {section.name} documentation 2024 2025"
-        web_results = await self._web_search(search_query)
+        # Use section-specific search queries for better results
+        search_queries = self._get_section_search_queries(connector_name, section.name)
+        
+        all_web_results = []
+        for query in search_queries[:2]:  # Limit to 2 queries per section
+            result = await self._web_search(query, connector_name=connector_name)
+            if result and "No results" not in result and "error" not in result.lower():
+                all_web_results.append(result)
+        
+        web_results = "\n\n".join(all_web_results) if all_web_results else "No results found"
         
         # Combine all context sources
         if all_context_parts:
@@ -2542,9 +2640,16 @@ Confidence: {whisper.confidence}%
 """
             all_context_parts.append(docwhisperer_context)
         
-        # 🔍 Web search
-        search_query = f"{connector_name} API {section.name} documentation 2024 2025"
-        web_results = await self._web_search(search_query)
+        # 🔍 Web search with section-specific queries
+        search_queries = self._get_section_search_queries(connector_name, section.name)
+        
+        all_web_results = []
+        for query in search_queries[:2]:  # Limit to 2 queries
+            result = await self._web_search(query, connector_name=connector_name)
+            if result and "No results" not in result and "error" not in result.lower():
+                all_web_results.append(result)
+        
+        web_results = "\n\n".join(all_web_results) if all_web_results else "No results found"
         
         if all_context_parts:
             web_results = "\n".join(all_context_parts) + "\n\n**Web Search Results (supplementary):**\n" + web_results
