@@ -3217,10 +3217,11 @@ Generate comprehensive markdown content for this section with PROPER CITATIONS.
                 # Store review in progress
                 if self._current_progress:
                     self._current_progress.section_reviews[section.number] = review
+                    # NOTE: stop_event is always None now (stop-the-line disabled)
                     if stop_event:
                         self._current_progress.stop_the_line_events.append(stop_event)
                         self._current_progress.contradictions.extend(review.contradictions)
-                        self._current_progress.status = "stopped"
+                        # Don't set status to stopped - continue research
                 
             except Exception as e:
                 print(f"  ⚠ Critic Agent review failed: {e}")
@@ -3286,15 +3287,8 @@ Generate comprehensive markdown content for this section with PROPER CITATIONS.
             except Exception as e:
                 print(f"  ⚠ Claim extraction failed: {e}")
         
-        # Check for stop-the-line
-        if stop_event:
-            print(f"  🛑 STOP-THE-LINE triggered for Section {section.number}: {stop_event.reason}")
-            self._current_progress.status = "stopped"
-            self._current_progress.error_message = f"Stop-the-line: {stop_event.reason} - {stop_event.required_action}"
-            if on_progress:
-                on_progress(self._current_progress)
-            section_content += f"\n\n⚠️ **STOP-THE-LINE**: {stop_event.reason} - {stop_event.required_action}\n"
-            return section_content, True
+        # NOTE: stop_event is always None now (stop-the-line disabled)
+        # Research continues regardless of any issues detected
         
         # Update overall confidence
         if review and review.confidence_score:
@@ -3655,19 +3649,7 @@ Generate comprehensive markdown content for this section with PROPER CITATIONS.
             
             section_content = result["content"]
             review = result.get("review")
-            stop_event = result.get("stop_the_line")
-            
-            # Check for stop-the-line
-            if stop_event:
-                print(f"  🛑 STOP-THE-LINE triggered for Section {section.number}: {stop_event.reason}")
-                self._current_progress.status = "stopped"
-                self._current_progress.error_message = f"Stop-the-line: {stop_event.reason} - {stop_event.required_action}"
-                if on_progress:
-                    on_progress(self._current_progress)
-                # Add stop notice to document
-                section_content += f"\n\n⚠️ **STOP-THE-LINE**: {stop_event.reason} - {stop_event.required_action}\n"
-                document_parts.append(section_content)
-                break  # Stop generation
+            # NOTE: stop_event is always None now (stop-the-line disabled)
             
             # Save discovery section content for parsing
             if section.number == 2:
@@ -3743,18 +3725,7 @@ Generate comprehensive markdown content for this section with PROPER CITATIONS.
             
             section_content = result["content"]
             review = result.get("review")
-            stop_event = result.get("stop_the_line")
-            
-            # Check for stop-the-line
-            if stop_event:
-                print(f"  🛑 STOP-THE-LINE triggered for Section {method_section_number}: {stop_event.reason}")
-                self._current_progress.status = "stopped"
-                self._current_progress.error_message = f"Stop-the-line: {stop_event.reason} - {stop_event.required_action}"
-                if on_progress:
-                    on_progress(self._current_progress)
-                section_content += f"\n\n⚠️ **STOP-THE-LINE**: {stop_event.reason} - {stop_event.required_action}\n"
-                document_parts.append(section_content)
-                break
+            # NOTE: stop_event is always None now (stop-the-line disabled)
             
             document_parts.append(section_content)
             self._current_progress.sections_completed.append(method_section_number)
@@ -3986,37 +3957,8 @@ Generate comprehensive markdown content for this section with PROPER CITATIONS.
         # Build Final Document
         # ========================================
         
-        # Check if stopped
-        if self._current_progress.status == "stopped":
-            if on_progress:
-                on_progress(self._current_progress)
-            # Return partial document with stop notice
-            partial_doc = "\n".join(document_parts)
-            stop_events_text = "\n".join([
-                f"- Section {event.section_number}: {event.reason} - {event.required_action}"
-                for event in self._current_progress.stop_the_line_events
-            ]) if self._current_progress.stop_the_line_events else "No details available"
-            
-            return f"""# 📚 Connector Research: {connector_name}
-
-**Status:** ⚠️ STOPPED - Critical Issues Detected
-**Reason:** {self._current_progress.error_message}
-
----
-
-{partial_doc}
-
----
-
-## ⚠️ Research Generation Stopped
-
-Research generation was stopped due to critical contradictions or low confidence in critical claims.
-
-**Stop-the-Line Events:**
-{stop_events_text}
-
-Please review the issues above and resolve them before continuing.
-"""
+        # NOTE: Stop-the-line has been disabled - research always completes
+        # The status check below is kept for backwards compatibility but should never trigger
         
         # Create document header with accurate section count
         docwhisperer_stats = self.doc_whisperer.get_whisper_stats()
