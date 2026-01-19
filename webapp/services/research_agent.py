@@ -1101,6 +1101,16 @@ class ResearchAgent:
             print(f"  ⚠ Contradiction Resolver not available: {e}")
             self.contradiction_resolver = None
         
+        # 🕷️ Initialize Doc Crawler for known connector documentation
+        self.doc_crawler = None
+        self._crawled_docs_cache: Dict[str, str] = {}
+        try:
+            from services.doc_crawler import DocCrawler
+            self.doc_crawler = DocCrawler()
+            print("  🕷️ Doc Crawler initialized!")
+        except Exception as e:
+            print(f"  ⚠ Doc Crawler not available: {e}")
+        
         print("  📚 ResearchAgent ready with multi-source knowledge and multi-agent review!")
     
     def get_progress(self) -> Optional[ResearchProgress]:
@@ -1110,6 +1120,97 @@ class ResearchAgent:
     def cancel(self):
         """Request cancellation of current research."""
         self._cancel_requested = True
+    
+    async def _fetch_official_docs(self, connector_name: str, section_type: str = "general") -> str:
+        """
+        Fetch official documentation for a known connector using direct URL crawling.
+        
+        This is the PRIMARY source for connector research - if we have known doc URLs,
+        we crawl them directly instead of relying on web search.
+        
+        Args:
+            connector_name: Name of the connector (e.g., "Shopify")
+            section_type: Type of documentation needed:
+                - "general" - All documentation
+                - "auth" - Authentication/authorization docs
+                - "graphql_objects" - GraphQL objects/types list
+                - "rest_resources" - REST API resources list
+                - "rate_limits" - Rate limiting docs
+                - "webhooks" - Webhook documentation
+                - "bulk" - Bulk operations docs
+                - "pagination" - Pagination docs
+        
+        Returns:
+            Crawled documentation content as a string
+        """
+        # Check cache first
+        cache_key = f"{connector_name.lower()}_{section_type}"
+        if cache_key in self._crawled_docs_cache:
+            return self._crawled_docs_cache[cache_key]
+        
+        if not self.doc_crawler:
+            return ""
+        
+        try:
+            from services.doc_registry import get_connector_docs
+            
+            doc_config = get_connector_docs(connector_name)
+            if not doc_config:
+                print(f"  ⚠ No doc registry entry for {connector_name}")
+                return ""
+            
+            # Determine which URLs to crawl based on section type
+            urls_to_crawl = []
+            
+            if section_type == "auth" and doc_config.auth_docs:
+                urls_to_crawl = [doc_config.auth_docs]
+            elif section_type == "graphql_objects" and hasattr(doc_config, 'graphql_objects') and doc_config.graphql_objects:
+                urls_to_crawl = [doc_config.graphql_objects]
+            elif section_type == "rest_resources":
+                if hasattr(doc_config, 'rest_resources') and doc_config.rest_resources:
+                    urls_to_crawl = [doc_config.rest_resources]
+                elif doc_config.api_reference:
+                    urls_to_crawl = [doc_config.api_reference]
+            elif section_type == "rate_limits" and doc_config.rate_limit_docs:
+                urls_to_crawl = [doc_config.rate_limit_docs]
+            elif section_type == "webhooks" and doc_config.webhooks_docs:
+                urls_to_crawl = [doc_config.webhooks_docs]
+            elif section_type == "bulk" and hasattr(doc_config, 'bulk_operations') and doc_config.bulk_operations:
+                urls_to_crawl = [doc_config.bulk_operations]
+            elif section_type == "pagination" and hasattr(doc_config, 'pagination_docs') and doc_config.pagination_docs:
+                urls_to_crawl = [doc_config.pagination_docs]
+            else:
+                # General - crawl all official docs
+                urls_to_crawl = doc_config.official_docs[:5]  # Limit to first 5
+            
+            if not urls_to_crawl:
+                return ""
+            
+            print(f"  🕷️ Crawling {len(urls_to_crawl)} official doc URL(s) for {connector_name} ({section_type})...")
+            
+            all_content = []
+            for url in urls_to_crawl:
+                try:
+                    result = await self.doc_crawler.crawl_single_url(url, max_depth=1)
+                    if result and result.pages:
+                        for page in result.pages:
+                            if page.content:
+                                all_content.append(f"## Source: {page.title or page.url}\n\n{page.content}")
+                except Exception as e:
+                    print(f"    ⚠ Failed to crawl {url}: {e}")
+                    continue
+            
+            content = "\n\n---\n\n".join(all_content)
+            
+            # Cache the result
+            self._crawled_docs_cache[cache_key] = content
+            
+            print(f"    ✓ Crawled {len(all_content)} pages, {len(content)} chars")
+            return content
+            
+        except Exception as e:
+            print(f"  ⚠ Failed to fetch official docs: {e}")
+            return ""
     
     def _extract_github_metrics(self, github_context: Dict[str, Any]) -> ResearchMetrics:
         """Extract metrics from GitHub context for Quick Summary.
@@ -1821,53 +1922,80 @@ class ResearchAgent:
             List of targeted search queries
         """
         section_lower = section_name.lower()
+        name_lower = connector_name.lower()
+        
+        # Get connector-specific site domain for targeted searches
+        site_domain = None
+        try:
+            from services.doc_registry import get_connector_docs
+            doc_config = get_connector_docs(connector_name)
+            if doc_config:
+                site_domain = doc_config.domain
+        except Exception:
+            pass
+        
+        # Site-specific search prefix for known connectors
+        site_prefix = f"site:{site_domain} " if site_domain else ""
         
         # Section-specific search strategies with targeted terminology
         search_strategies = {
             "authentication": [
-                f"{connector_name} authentication methods OAuth session token API key",
+                f"{site_prefix}{connector_name} authentication OAuth session token API key",
                 f"{connector_name} authorization access token official documentation",
             ],
             "rate limit": [
-                f"{connector_name} API rate limits throttling requests per second",
-                f"{connector_name} rate limiting quota best practices",
+                f"{site_prefix}{connector_name} API rate limits throttling",
+                f"{connector_name} rate limiting quota requests per second",
             ],
             "extraction": [
-                f"{connector_name} API endpoints REST GraphQL bulk operations",
-                f"{connector_name} data extraction methods official documentation",
+                f"{site_prefix}{connector_name} API endpoints REST GraphQL",
+                f"{connector_name} data extraction methods bulk operations",
             ],
             "methods discovery": [
-                f"{connector_name} API REST GraphQL webhooks bulk export",
-                f"{connector_name} available APIs official documentation developer guide",
+                f"{site_prefix}{connector_name} API REST GraphQL webhooks",
+                # Also search for API overview pages
+                f"{connector_name} API capabilities documentation developer",
             ],
             "object": [
-                f"{connector_name} API resources entities objects schema",
-                f"{connector_name} data model available objects documentation",
+                # For Shopify, directly target the resources/objects pages
+                f"{site_prefix}{connector_name} API resources objects",
+                f"{site_prefix}{connector_name} admin graphql objects",
+                f"{connector_name} data model entities schema API",
             ],
             "webhook": [
-                f"{connector_name} webhooks event subscriptions notifications",
-                f"{connector_name} webhook events payload format official docs",
+                f"{site_prefix}{connector_name} webhooks events subscriptions",
+                f"{connector_name} webhook notifications payload format",
             ],
             "error": [
-                f"{connector_name} API error codes error handling",
-                f"{connector_name} error responses troubleshooting documentation",
+                f"{site_prefix}{connector_name} API error codes handling",
+                f"{connector_name} error responses troubleshooting",
             ],
             "pagination": [
-                f"{connector_name} API pagination cursor offset limit",
-                f"{connector_name} paginated responses handling documentation",
+                f"{site_prefix}{connector_name} API pagination cursor",
+                f"{connector_name} paginated responses relay connections",
             ],
             "sdk": [
-                # Search GitHub directly for SDKs - this is how developers actually find them
+                # Search GitHub directly for SDKs - this is how developers find them
                 f"{connector_name} java sdk github",
                 f"{connector_name} python sdk github official",
                 f"{connector_name} node sdk npm official",
-                f"{connector_name} sdk client library official documentation",
-                # Maven Central for Java specifically
                 f"site:mvnrepository.com {connector_name} api",
             ],
             "fivetran": [
-                f"Fivetran {connector_name} connector documentation schema",
-                f"Fivetran {connector_name} setup sync configuration",
+                f"site:fivetran.com {connector_name} connector documentation",
+                f"Fivetran {connector_name} schema sync",
+            ],
+            "graphql": [
+                f"{site_prefix}{connector_name} graphql admin api objects",
+                f"{connector_name} graphql queries mutations schema",
+            ],
+            "rest": [
+                f"{site_prefix}{connector_name} rest admin api resources",
+                f"{connector_name} REST API endpoints documentation",
+            ],
+            "bulk": [
+                f"{site_prefix}{connector_name} bulk operations api",
+                f"{connector_name} bulk data export import batch",
             ],
         }
         
@@ -1876,10 +2004,10 @@ class ResearchAgent:
             if keyword in section_lower:
                 return queries
         
-        # Default: generic but still connector-specific query
+        # Default: site-specific search first, then generic
         return [
-            f"{connector_name} {section_name} official API documentation",
-            f"{connector_name} {section_name} developer guide",
+            f"{site_prefix}{connector_name} {section_name}",
+            f"{connector_name} {section_name} official documentation",
         ]
     
     async def _verify_with_multiple_sources(
@@ -2348,13 +2476,67 @@ class ResearchAgent:
         """
         # =================================================================
         # Multi-Source Knowledge Retrieval (Priority Order)
-        # 📚 Knowledge Vault (pre-indexed) > 🔮 DocWhisperer > 🔍 Web Search
+        # 🕷️ Official Docs (direct crawl) > 📚 Knowledge Vault > 🔮 DocWhisperer > 🔍 Web Search
         # =================================================================
         
         all_context_parts = []
         
-        # 📚 STEP 1: Query Knowledge Vault FIRST (highest confidence!)
+        # 🕷️ STEP 0: Crawl KNOWN official documentation URLs directly
+        # This is the PRIMARY source for known connectors like Shopify, GitHub, etc.
+        official_docs_context = ""
+        section_name_lower = section.name.lower()
+        
+        # Map section names to doc types
+        doc_types_to_crawl = []
+        
+        # Section 19 (Object Catalog) or Section 2 (Extraction Methods) - crawl multiple doc types
+        if section.number == 19 or section.number == 2 or "catalog" in section_name_lower:
+            # For object catalog, crawl BOTH REST and GraphQL resources
+            doc_types_to_crawl = ["rest_resources", "graphql_objects", "bulk"]
+        elif "auth" in section_name_lower:
+            doc_types_to_crawl = ["auth"]
+        elif "graphql" in section_name_lower:
+            doc_types_to_crawl = ["graphql_objects"]
+        elif "rest" in section_name_lower or "object" in section_name_lower or "endpoint" in section_name_lower:
+            doc_types_to_crawl = ["rest_resources"]
+        elif "rate" in section_name_lower or "limit" in section_name_lower:
+            doc_types_to_crawl = ["rate_limits"]
+        elif "webhook" in section_name_lower:
+            doc_types_to_crawl = ["webhooks"]
+        elif "bulk" in section_name_lower or "batch" in section_name_lower:
+            doc_types_to_crawl = ["bulk"]
+        elif "pagination" in section_name_lower or "cursor" in section_name_lower:
+            doc_types_to_crawl = ["pagination"]
+        elif "method" in section_name_lower or "discovery" in section_name_lower:
+            # For Extraction Methods Discovery, crawl general API docs
+            doc_types_to_crawl = ["general", "rest_resources", "graphql_objects"]
+        else:
+            doc_types_to_crawl = ["general"]
+        
+        if self.doc_crawler:
+            all_official_docs = []
+            for doc_type in doc_types_to_crawl:
+                official_docs = await self._fetch_official_docs(connector_name, doc_type)
+                if official_docs:
+                    all_official_docs.append(f"### {doc_type.replace('_', ' ').title()} Documentation\n\n{official_docs[:4000]}")
+                    print(f"  🕷️ Crawled {doc_type}: {len(official_docs)} chars")
+            
+            if all_official_docs:
+                combined_docs = "\n\n---\n\n".join(all_official_docs)
+                official_docs_context = f"""
+🕷️ **Official Documentation (Direct Crawl - HIGHEST AUTHORITY):**
+*This content was crawled directly from official documentation URLs*
+
+{combined_docs[:12000]}
+
+---
+"""
+                all_context_parts.append(official_docs_context)
+                print(f"  🕷️ Total official docs for Section {section.number}: {len(official_docs_context)} chars ({', '.join(doc_types_to_crawl)})")
+        
+        # 📚 STEP 1: Query Knowledge Vault (pre-indexed official docs)
         vault_context = ""
+        vault_results = []
         if self.knowledge_vault and self.knowledge_vault.has_knowledge(connector_name):
             vault_results = self.knowledge_vault.search(
                 connector_name=connector_name,
@@ -2365,14 +2547,14 @@ class ResearchAgent:
             if vault_results:
                 vault_texts = []
                 for i, result in enumerate(vault_results, 1):
-                    vault_texts.append(f"[vault:{i}] **{result.title}** (confidence: {result.score:.2f})")
+                    vault_texts.append(f"**{result.title}** (confidence: {result.score:.2f})")
                     vault_texts.append(f"Source Type: {result.source_type}")
                     vault_texts.append(f"{result.text[:1000]}...")
                     vault_texts.append("")
                 
                 vault_context = f"""
 📚 **Knowledge Vault Context (Pre-Indexed Official Documentation):**
-*This information was pre-indexed from official sources - HIGHEST CONFIDENCE*
+*This information was pre-indexed from official sources*
 
 {chr(10).join(vault_texts)}
 
@@ -2413,7 +2595,7 @@ Confidence: {whisper.confidence}%
                     confidence=whisper.confidence / 100.0 if whisper.confidence else 0.9
                 )
         
-        # 🔍 STEP 3: Web search - SKIP if vault has high-quality results
+        # 🔍 STEP 3: Web search - SKIP if we have official docs
         # Use section-specific search queries for better results
         
         # Calculate vault quality score (average confidence)
@@ -2424,10 +2606,18 @@ Confidence: {whisper.confidence}%
         web_results = ""
         skip_web_search = False
         
-        # Skip web search if:
-        # 1. Knowledge Vault has good results (avg score > 0.7) AND
-        # 2. We have DocWhisperer results
-        if vault_quality > 0.7 and docwhisperer_context:
+        # Skip web search if we have high-quality official documentation
+        # Priority: Official docs (direct crawl) > Vault > DocWhisperer
+        has_official_docs = len(official_docs_context) > 500
+        has_good_vault = vault_quality > 0.7
+        
+        if has_official_docs:
+            # If we have official docs from direct crawl, no need for web search
+            skip_web_search = True
+            web_results = "*Web search skipped - official documentation available from direct crawl*"
+            print(f"  ⏭️  Skipping web search - official docs available ({len(official_docs_context)} chars)")
+        elif has_good_vault and docwhisperer_context:
+            # Fall back to vault + DocWhisperer combo
             skip_web_search = True
             web_results = "*Web search skipped - high-quality pre-indexed documentation available*"
             print(f"  ⏭️  Skipping web search - vault quality: {vault_quality:.2f}")

@@ -36,6 +36,11 @@ class ConnectorDocConfig:
     webhooks_docs: Optional[str] = None
     sdk_docs: Optional[str] = None
     changelog: Optional[str] = None
+    # Additional extraction-specific URLs
+    graphql_objects: Optional[str] = None  # URL listing all GraphQL objects/types
+    rest_resources: Optional[str] = None   # URL listing all REST resources
+    bulk_operations: Optional[str] = None  # Bulk/batch API docs
+    pagination_docs: Optional[str] = None  # Pagination documentation
 
 
 # Registry of known connector documentation
@@ -45,9 +50,25 @@ CONNECTOR_DOC_REGISTRY: Dict[str, ConnectorDocConfig] = {
     "shopify": ConnectorDocConfig(
         name="Shopify",
         official_docs=[
+            # API Overview - lists all extraction capabilities
             "https://shopify.dev/docs/api",
+            # REST API - all resources/objects
             "https://shopify.dev/docs/api/admin-rest",
+            "https://shopify.dev/docs/api/admin-rest/latest/resources",
+            # GraphQL API - all objects
             "https://shopify.dev/docs/api/admin-graphql",
+            "https://shopify.dev/docs/api/admin-graphql/latest/objects",
+            # Authentication - OAuth, session tokens, etc.
+            "https://shopify.dev/docs/apps/build/authentication-authorization",
+            # Webhooks
+            "https://shopify.dev/docs/api/admin-rest/latest/resources/webhook",
+            # Rate limits
+            "https://shopify.dev/docs/api/usage/rate-limits",
+            # Pagination
+            "https://shopify.dev/docs/api/usage/pagination-graphql",
+            "https://shopify.dev/docs/api/usage/pagination-rest",
+            # Bulk operations (GraphQL)
+            "https://shopify.dev/docs/api/usage/bulk-operations",
         ],
         domain="shopify.dev",
         # Gate 1: API-only patterns (clean separation, no contradictions)
@@ -58,6 +79,7 @@ CONNECTOR_DOC_REGISTRY: Dict[str, ConnectorDocConfig] = {
             "/docs/api/admin-graphql/*",
             "/docs/api/storefront/*",
             "/docs/api/usage/*",
+            "/docs/apps/build/authentication-authorization/*",
             "/changelog",
             "/changelog/*",
         ],
@@ -66,11 +88,16 @@ CONNECTOR_DOC_REGISTRY: Dict[str, ConnectorDocConfig] = {
             "*/beta/*",
             "*/deprecated/*",
         ],
-        api_reference="https://shopify.dev/docs/api/admin-rest/latest",
+        api_reference="https://shopify.dev/docs/api/admin-rest/latest/resources",
         auth_docs="https://shopify.dev/docs/apps/build/authentication-authorization",
         rate_limit_docs="https://shopify.dev/docs/api/usage/rate-limits",
         webhooks_docs="https://shopify.dev/docs/api/admin-rest/latest/resources/webhook",
-        changelog="https://shopify.dev/changelog"
+        changelog="https://shopify.dev/changelog",
+        # Additional critical URLs for data extraction research
+        graphql_objects="https://shopify.dev/docs/api/admin-graphql/latest/objects",
+        rest_resources="https://shopify.dev/docs/api/admin-rest/latest/resources",
+        bulk_operations="https://shopify.dev/docs/api/usage/bulk-operations",
+        pagination_docs="https://shopify.dev/docs/api/usage/pagination-graphql",
     ),
     "woocommerce": ConnectorDocConfig(
         name="WooCommerce",

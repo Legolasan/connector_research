@@ -770,6 +770,77 @@ class DocCrawler:
             print(f"  ⚠ Failed to crawl {url}: {e}")
             return None
     
+    async def crawl_single_url(
+        self,
+        url: str,
+        max_depth: int = 0,
+        follow_links: bool = False
+    ) -> CrawlResult:
+        """
+        Crawl a single URL and optionally follow links.
+        
+        This is a simpler interface for directly crawling known documentation URLs
+        without the full two-gate filtering system.
+        
+        Args:
+            url: The URL to crawl
+            max_depth: How many levels of links to follow (0 = just this page)
+            follow_links: Whether to follow internal links
+            
+        Returns:
+            CrawlResult with crawled content
+        """
+        from urllib.parse import urlparse
+        
+        parsed = urlparse(url)
+        connector_name = parsed.netloc.split('.')[0]
+        
+        result = CrawlResult(connector_name=connector_name)
+        start_time = datetime.utcnow()
+        
+        # Clear state for fresh crawl
+        self._visited_urls.clear()
+        self._content_hashes.clear()
+        
+        urls_to_crawl = [(url, 0)]  # (url, depth)
+        
+        while urls_to_crawl and len(result.pages) < self.max_pages:
+            current_url, depth = urls_to_crawl.pop(0)
+            
+            if current_url in self._visited_urls:
+                continue
+            
+            self._visited_urls.add(current_url)
+            
+            # Crawl the page
+            page = await self._crawl_page_httpx(current_url)
+            
+            if page:
+                page.depth = depth
+                result.pages.append(page)
+                result.urls_crawled.append(current_url)
+                
+                # Follow links if enabled and within depth
+                if follow_links and depth < max_depth and page.links:
+                    for link in page.links:
+                        # Only follow links on the same domain
+                        link_parsed = urlparse(link)
+                        if link_parsed.netloc == parsed.netloc and link not in self._visited_urls:
+                            urls_to_crawl.append((link, depth + 1))
+        
+        # Compile results
+        if result.pages:
+            result.total_content = "\n\n---\n\n".join([
+                f"## {p.title}\nSource: {p.url}\n\n{p.content}"
+                for p in result.pages
+            ])
+            result.total_words = sum(p.word_count for p in result.pages)
+        
+        result.completed_at = datetime.utcnow()
+        result.crawl_duration_seconds = (result.completed_at - start_time).total_seconds()
+        
+        return result
+    
     async def crawl_official_docs(
         self,
         connector_name: str,
