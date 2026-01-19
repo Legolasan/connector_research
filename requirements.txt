@@ -30,6 +30,9 @@ markdown>=3.5.0
 # Headless Browser (for JS-rendered pages)
 playwright>=1.40.0
 
+# LLM-optimized Web Crawler
+llm-crawler>=1.0.0
+
 # PDF Parsing
 pypdf>=3.17.0
 

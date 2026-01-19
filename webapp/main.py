@@ -33,7 +33,9 @@ from services.research_agent import get_research_agent, ResearchAgent
 from services.vector_manager import get_vector_manager, VectorManager
 from services.fivetran_crawler import get_fivetran_crawler, FivetranCrawler
 from services.knowledge_vault import get_knowledge_vault, KnowledgeVault, KnowledgeSourceType
-from services.doc_crawler import get_doc_crawler, DocCrawler
+from services.doc_crawler import get_doc_crawler, DocCrawler  # Kept as fallback
+from services.llm_crawler_service import get_llm_crawler_service, LLMCrawlerService
+from services.doc_registry import get_official_doc_urls
 from services.security import verify_api_key, InputSanitizer, get_client_ip
 
 
@@ -196,7 +198,8 @@ research_agent: Optional[ResearchAgent] = None
 vector_manager: Optional[VectorManager] = None
 fivetran_crawler: Optional[FivetranCrawler] = None
 knowledge_vault: Optional[KnowledgeVault] = None
-doc_crawler: Optional[DocCrawler] = None
+doc_crawler: Optional[DocCrawler] = None  # Legacy fallback
+llm_crawler: Optional[LLMCrawlerService] = None  # Primary crawler
 
 # Background tasks tracking
 _running_research_tasks: Dict[str, asyncio.Task] = {}
@@ -205,7 +208,7 @@ _running_research_tasks: Dict[str, asyncio.Task] = {}
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Initialize services on startup."""
-    global connector_manager, github_cloner, research_agent, vector_manager, fivetran_crawler, knowledge_vault, doc_crawler
+    global connector_manager, github_cloner, research_agent, vector_manager, fivetran_crawler, knowledge_vault, doc_crawler, llm_crawler
     
     # Download NLTK data for sentence tokenization (used by citation validator)
     try:
@@ -275,10 +278,21 @@ async def lifespan(app: FastAPI):
     
     try:
         doc_crawler = get_doc_crawler()
-        print("🕷️ Documentation Crawler initialized")
+        print("🕷️ Documentation Crawler initialized (legacy fallback)")
     except Exception as e:
         print(f"⚠ Documentation Crawler not available: {e}")
         doc_crawler = None
+    
+    # Initialize LLM Crawler (primary crawler)
+    try:
+        llm_crawler = get_llm_crawler_service()
+        if llm_crawler.is_available:
+            print("🕷️ LLM Crawler initialized (primary)")
+        else:
+            print("⚠ LLM Crawler not available, will use legacy fallback")
+    except Exception as e:
+        print(f"⚠ LLM Crawler initialization failed: {e}")
+        llm_crawler = None
     
     yield
     
@@ -843,10 +857,13 @@ async def generate_research(
                     print(f"⚠ Hevo repository cloning skipped, continuing without Hevo comparison")
             
             # Pre-crawl official documentation and index into Knowledge Vault
-            if doc_crawler and knowledge_vault:
+            # Priority: LLM Crawler (smart chunking) > Legacy DocCrawler (fallback)
+            if knowledge_vault:
                 try:
                     # Get user-provided URLs or use registry/auto-discovery
                     user_doc_urls = getattr(connector, 'official_doc_urls', None)
+                    registry_urls = get_official_doc_urls(connector.name) if not user_doc_urls else []
+                    crawl_urls = user_doc_urls or registry_urls
                     
                     print(f"📚 Pre-crawling official documentation for {connector.name}...")
                     connector_manager.update_connector(
@@ -854,32 +871,78 @@ async def generate_research(
                         status="crawling_docs"
                     )
                     
-                    crawl_result = await doc_crawler.crawl_official_docs(
-                        connector_name=connector.name,
-                        user_provided_urls=user_doc_urls,
-                        max_depth=2  # Medium depth: 2-3 levels
-                    )
+                    crawl_success = False
                     
-                    if crawl_result.total_content:
-                        # Index crawled content into Knowledge Vault
-                        knowledge_vault.index_text(
+                    # Try LLM Crawler first (primary - smart chunking)
+                    if llm_crawler and llm_crawler.is_available and crawl_urls:
+                        print(f"  🕷️ Using LLM Crawler (smart chunking) for {len(crawl_urls)} URLs")
+                        
+                        crawl_result = await llm_crawler.crawl_urls(
+                            urls=crawl_urls,
                             connector_name=connector.name,
-                            title=f"Official {connector.name} API Documentation",
-                            content=crawl_result.total_content,
-                            source_type="official_docs"
+                            depth=2,
+                            max_pages=50
                         )
                         
-                        # Update connector with crawl stats
-                        connector_manager.update_connector(
-                            connector_id,
-                            doc_crawl_status="indexed",
-                            doc_crawl_urls=crawl_result.urls_crawled,
-                            doc_crawl_pages=len(crawl_result.pages),
-                            doc_crawl_words=crawl_result.total_words
+                        if crawl_result.chunks:
+                            # Index each chunk separately for better retrieval
+                            chunks_indexed = 0
+                            for chunk in crawl_result.chunks:
+                                knowledge_vault.index_text(
+                                    connector_name=connector.name,
+                                    title=chunk.heading_context or chunk.title or f"Chunk {chunk.position}",
+                                    content=chunk.content,
+                                    source_type="official_docs",
+                                    source_url=chunk.url
+                                )
+                                chunks_indexed += 1
+                            
+                            # Update connector with crawl stats
+                            connector_manager.update_connector(
+                                connector_id,
+                                doc_crawl_status="indexed",
+                                doc_crawl_urls=crawl_result.urls_crawled,
+                                doc_crawl_pages=crawl_result.total_pages,
+                                doc_crawl_words=crawl_result.total_words
+                            )
+                            
+                            print(f"  ✓ LLM Crawler: {crawl_result.total_pages} pages, {chunks_indexed} chunks indexed")
+                            crawl_success = True
+                        else:
+                            print(f"  ⚠ LLM Crawler returned no chunks, trying fallback")
+                    
+                    # Fallback to legacy DocCrawler if LLM Crawler failed
+                    if not crawl_success and doc_crawler:
+                        print(f"  🕷️ Using legacy DocCrawler (fallback)")
+                        
+                        crawl_result = await doc_crawler.crawl_official_docs(
+                            connector_name=connector.name,
+                            user_provided_urls=user_doc_urls,
+                            max_depth=2
                         )
                         
-                        print(f"  ✓ Pre-crawled {len(crawl_result.pages)} pages, {crawl_result.total_words} words indexed")
-                    else:
+                        if crawl_result.total_content:
+                            # Index crawled content into Knowledge Vault
+                            knowledge_vault.index_text(
+                                connector_name=connector.name,
+                                title=f"Official {connector.name} API Documentation",
+                                content=crawl_result.total_content,
+                                source_type="official_docs"
+                            )
+                            
+                            # Update connector with crawl stats
+                            connector_manager.update_connector(
+                                connector_id,
+                                doc_crawl_status="indexed",
+                                doc_crawl_urls=crawl_result.urls_crawled,
+                                doc_crawl_pages=len(crawl_result.pages),
+                                doc_crawl_words=crawl_result.total_words
+                            )
+                            
+                            print(f"  ✓ Legacy crawler: {len(crawl_result.pages)} pages, {crawl_result.total_words} words indexed")
+                            crawl_success = True
+                    
+                    if not crawl_success:
                         connector_manager.update_connector(connector_id, doc_crawl_status="no_content")
                         print(f"  ⚠ No documentation content found for pre-crawl")
                         

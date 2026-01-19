@@ -1107,9 +1107,22 @@ class ResearchAgent:
         try:
             from services.doc_crawler import DocCrawler
             self.doc_crawler = DocCrawler()
-            print("  🕷️ Doc Crawler initialized!")
+            print("  🕷️ Doc Crawler initialized (legacy)!")
         except Exception as e:
             print(f"  ⚠ Doc Crawler not available: {e}")
+        
+        # 🕷️ Initialize LLM Crawler (primary, smart chunking)
+        self.llm_crawler = None
+        try:
+            from services.llm_crawler_service import get_llm_crawler_service
+            self.llm_crawler = get_llm_crawler_service()
+            if self.llm_crawler.is_available:
+                print("  🕷️ LLM Crawler initialized (primary)!")
+            else:
+                print("  ⚠ LLM Crawler not available")
+                self.llm_crawler = None
+        except Exception as e:
+            print(f"  ⚠ LLM Crawler not available: {e}")
         
         print("  📚 ResearchAgent ready with multi-source knowledge and multi-agent review!")
     
@@ -1120,6 +1133,188 @@ class ResearchAgent:
     def cancel(self):
         """Request cancellation of current research."""
         self._cancel_requested = True
+    
+    # =========================================================================
+    # Section-Aware Data Sufficiency Checker
+    # =========================================================================
+    
+    # Section-specific required keywords for sufficiency validation
+    SECTION_REQUIRED_KEYWORDS = {
+        "object": ["object", "resource", "endpoint", "entity", "get", "post", "api"],
+        "catalog": ["object", "resource", "endpoint", "entity", "schema", "table"],
+        "auth": ["oauth", "token", "api key", "scope", "authorization", "authentication", "credential"],
+        "rate": ["rate", "limit", "throttle", "requests", "429", "quota", "second"],
+        "webhook": ["webhook", "event", "subscription", "payload", "topic", "notification"],
+        "pagination": ["cursor", "page", "limit", "offset", "next", "hasnextpage", "pageinfo"],
+        "bulk": ["bulk", "batch", "export", "import", "async", "job", "operation"],
+        "graphql": ["query", "mutation", "graphql", "node", "connection", "edge", "fragment"],
+        "rest": ["get", "post", "put", "delete", "endpoint", "resource", "http"],
+        "sdk": ["sdk", "library", "client", "package", "npm", "pip", "gem", "maven"],
+        "error": ["error", "exception", "status", "code", "message", "handling", "retry"],
+    }
+    
+    def _is_data_sufficient(
+        self,
+        vault_results: List[Any],
+        section: Any
+    ) -> Tuple[bool, List[str]]:
+        """
+        Check if vault results contain sufficient data for the section.
+        
+        Uses keyword-based validation to ensure the content actually covers
+        what the section needs, not just that content exists.
+        
+        Args:
+            vault_results: Results from Knowledge Vault search
+            section: The ResearchSection being generated
+            
+        Returns:
+            Tuple of (is_sufficient, missing_keywords)
+        """
+        if not vault_results:
+            return False, ["no_results"]
+        
+        # Combine all vault content (lowercase for matching)
+        combined_text = " ".join([
+            getattr(r, 'text', str(r)).lower() 
+            for r in vault_results
+        ])
+        
+        # Get section name for keyword lookup
+        section_name = getattr(section, 'name', str(section)).lower()
+        
+        # Collect required keywords for this section type
+        required_keywords = []
+        for key, keywords in self.SECTION_REQUIRED_KEYWORDS.items():
+            if key in section_name:
+                required_keywords.extend(keywords)
+        
+        # If no specific keywords found, use minimum content check
+        if not required_keywords:
+            # Default: at least 500 chars of content
+            is_sufficient = len(combined_text) > 500
+            return is_sufficient, [] if is_sufficient else ["insufficient_content"]
+        
+        # Check keyword coverage
+        found_keywords = [kw for kw in required_keywords if kw.lower() in combined_text]
+        missing_keywords = [kw for kw in required_keywords if kw.lower() not in combined_text]
+        
+        # Calculate coverage percentage
+        coverage = len(found_keywords) / len(required_keywords) if required_keywords else 0
+        
+        # Require at least 40% keyword coverage
+        is_sufficient = coverage >= 0.4 and len(combined_text) > 300
+        
+        if is_sufficient:
+            print(f"    ✓ Sufficiency check: {coverage:.0%} keywords found ({len(found_keywords)}/{len(required_keywords)})")
+        else:
+            print(f"    ⚠ Sufficiency check: {coverage:.0%} keywords found, missing: {missing_keywords[:5]}")
+        
+        return is_sufficient, missing_keywords
+    
+    async def _get_missing_data_targeted(
+        self,
+        connector_name: str,
+        section: Any,
+        missing_keywords: List[str]
+    ) -> str:
+        """
+        Get missing data using targeted search fallback (3-tier).
+        
+        Tier 1: Site-specific search on known domain (e.g., site:shopify.dev)
+        Tier 2: Direct URL crawl if relevant URL found
+        Tier 3: Generic web search as last resort
+        
+        Args:
+            connector_name: Name of the connector
+            section: The section being generated
+            missing_keywords: Keywords that were not found in vault
+            
+        Returns:
+            Additional context string
+        """
+        from services.doc_registry import get_connector_docs
+        
+        section_name = getattr(section, 'name', str(section))
+        results = []
+        
+        # Get doc config for site-specific search
+        doc_config = get_connector_docs(connector_name)
+        
+        # TIER 1: Site-specific search on known domain
+        if doc_config and doc_config.domain and missing_keywords:
+            # Build site-specific query
+            keywords_str = ' '.join(missing_keywords[:3])
+            site_query = f"site:{doc_config.domain} {keywords_str}"
+            
+            print(f"    🔍 Tier 1: Site search - {site_query}")
+            
+            site_results = await self._web_search(site_query, connector_name=connector_name)
+            
+            if site_results and "No results" not in site_results and len(site_results) > 100:
+                # Extract URLs from search results
+                urls_found = self._extract_urls_from_search(site_results, doc_config.domain)
+                
+                # TIER 2: Direct crawl of found URLs
+                if urls_found and self.llm_crawler:
+                    print(f"    🕷️ Tier 2: Crawling {len(urls_found)} found URLs")
+                    
+                    for url in urls_found[:2]:  # Limit to top 2
+                        try:
+                            crawl_result = await self.llm_crawler.crawl_single_url(
+                                url=url,
+                                connector_name=connector_name,
+                                depth=0  # Just this page
+                            )
+                            if crawl_result and crawl_result.total_content:
+                                results.append(f"## Crawled: {url}\n\n{crawl_result.total_content[:3000]}")
+                        except Exception as e:
+                            print(f"      ⚠ Failed to crawl {url}: {e}")
+                
+                if results:
+                    return "\n\n---\n\n".join(results)
+                
+                # If no URLs crawled, use site search results directly
+                results.append(f"## Site Search Results\n\n{site_results}")
+        
+        # TIER 3: Generic web search (last resort)
+        if not results:
+            generic_query = f"{connector_name} {section_name} API documentation"
+            print(f"    🔍 Tier 3: Generic search - {generic_query}")
+            
+            generic_results = await self._web_search(generic_query, connector_name=connector_name)
+            if generic_results:
+                results.append(generic_results)
+        
+        return "\n\n---\n\n".join(results) if results else ""
+    
+    def _extract_urls_from_search(self, search_results: str, domain: str) -> List[str]:
+        """
+        Extract URLs from search results that match the expected domain.
+        
+        Args:
+            search_results: Raw search results text
+            domain: Domain to filter URLs (e.g., "shopify.dev")
+            
+        Returns:
+            List of matching URLs
+        """
+        import re
+        
+        # Find all URLs in the search results
+        url_pattern = r'https?://[^\s<>"\')\]]+' 
+        all_urls = re.findall(url_pattern, search_results)
+        
+        # Filter to only include URLs from the expected domain
+        matching_urls = []
+        for url in all_urls:
+            # Clean up URL (remove trailing punctuation)
+            url = url.rstrip('.,;:')
+            if domain.lower() in url.lower():
+                if url not in matching_urls:
+                    matching_urls.append(url)
+        
+        return matching_urls[:5]  # Return top 5
     
     async def _fetch_official_docs(self, connector_name: str, section_type: str = "general") -> str:
         """
@@ -2595,43 +2790,69 @@ Confidence: {whisper.confidence}%
                     confidence=whisper.confidence / 100.0 if whisper.confidence else 0.9
                 )
         
-        # 🔍 STEP 3: Web search - SKIP if we have official docs
-        # Use section-specific search queries for better results
+        # 🔍 STEP 3: Smart sufficiency check and targeted fallback
+        # NEW: Use section-aware keyword validation instead of just content length
         
-        # Calculate vault quality score (average confidence)
-        vault_quality = 0.0
-        if vault_results:
-            vault_quality = sum(r.score for r in vault_results) / len(vault_results)
+        # Combine all vault and docwhisperer context for sufficiency check
+        all_indexed_content = vault_results if vault_results else []
+        
+        # Check if data is sufficient for this specific section
+        is_sufficient, missing_keywords = self._is_data_sufficient(all_indexed_content, section)
         
         web_results = ""
-        skip_web_search = False
         
-        # Skip web search if we have high-quality official documentation
-        # Priority: Official docs (direct crawl) > Vault > DocWhisperer
-        has_official_docs = len(official_docs_context) > 500
-        has_good_vault = vault_quality > 0.7
-        
-        if has_official_docs:
-            # If we have official docs from direct crawl, no need for web search
-            skip_web_search = True
-            web_results = "*Web search skipped - official documentation available from direct crawl*"
-            print(f"  ⏭️  Skipping web search - official docs available ({len(official_docs_context)} chars)")
-        elif has_good_vault and docwhisperer_context:
-            # Fall back to vault + DocWhisperer combo
-            skip_web_search = True
-            web_results = "*Web search skipped - high-quality pre-indexed documentation available*"
-            print(f"  ⏭️  Skipping web search - vault quality: {vault_quality:.2f}")
-        
-        if not skip_web_search:
-            search_queries = self._get_section_search_queries(connector_name, section.name)
+        if is_sufficient:
+            # Data is sufficient - no web search needed
+            print(f"  ⏭️  Data sufficient for {section.name} - skipping web search")
+            web_results = "*Data sufficient from indexed documentation*"
+        elif len(official_docs_context) > 500:
+            # We have official docs but they might not cover everything
+            # Check if official docs pass the sufficiency test
+            print(f"  🔍 Official docs present ({len(official_docs_context)} chars) but checking sufficiency...")
             
-            all_web_results = []
-            for query in search_queries[:2]:  # Limit to 2 queries per section
-                result = await self._web_search(query, connector_name=connector_name)
-                if result and "No results" not in result and "error" not in result.lower():
-                    all_web_results.append(result)
+            # Create a mock result to check official docs content
+            class MockResult:
+                def __init__(self, text):
+                    self.text = text
             
-            web_results = "\n\n".join(all_web_results) if all_web_results else "No results found"
+            official_sufficient, official_missing = self._is_data_sufficient(
+                [MockResult(official_docs_context)], 
+                section
+            )
+            
+            if official_sufficient:
+                web_results = "*Official documentation sufficient*"
+            else:
+                # Use targeted fallback for missing data
+                print(f"  🎯 Using targeted fallback for missing: {official_missing[:3]}...")
+                additional_context = await self._get_missing_data_targeted(
+                    connector_name, section, official_missing
+                )
+                if additional_context:
+                    web_results = f"**Additional Context (targeted search):**\n\n{additional_context}"
+                else:
+                    web_results = "*No additional data found*"
+        else:
+            # No sufficient indexed data - use targeted fallback
+            print(f"  🎯 Insufficient data - using targeted fallback for: {missing_keywords[:3]}...")
+            
+            additional_context = await self._get_missing_data_targeted(
+                connector_name, section, missing_keywords
+            )
+            
+            if additional_context:
+                web_results = f"**Targeted Search Results:**\n\n{additional_context}"
+            else:
+                # Last resort: generic web search
+                search_queries = self._get_section_search_queries(connector_name, section.name)
+                
+                all_web_results = []
+                for query in search_queries[:2]:  # Limit to 2 queries per section
+                    result = await self._web_search(query, connector_name=connector_name)
+                    if result and "No results" not in result and "error" not in result.lower():
+                        all_web_results.append(result)
+                
+                web_results = "\n\n".join(all_web_results) if all_web_results else "No results found"
         
         # Combine all context sources
         if all_context_parts:
