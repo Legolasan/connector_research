@@ -1060,8 +1060,13 @@ class ResearchAgent:
     - 🔍 Tavily Web Search - Fallback for additional context
     """
     
-    def __init__(self):
-        """Initialize the research agent with Knowledge Vault and DocWhisperer integration."""
+    def __init__(self, log_callback: Optional[Callable[[str, str], None]] = None):
+        """Initialize the research agent with Knowledge Vault and DocWhisperer integration.
+        
+        Args:
+            log_callback: Optional callback function for step-by-step logging.
+                         Called as log_callback(step: str, details: str)
+        """
         self.openai_api_key = os.getenv("OPENAI_API_KEY")
         self.tavily_api_key = os.getenv("TAVILY_API_KEY")
         self.model = os.getenv("RESEARCH_MODEL", "gpt-5-mini-2025-08-07")
@@ -1072,6 +1077,7 @@ class ResearchAgent:
         self.client = AsyncOpenAI(api_key=self.openai_api_key)
         self._cancel_requested = False
         self._current_progress: Optional[ResearchProgress] = None
+        self.log_callback = log_callback  # For interactive CLI logging
         
         # 📚 Initialize Knowledge Vault (pre-indexed official docs)
         self.knowledge_vault = None
@@ -1132,6 +1138,22 @@ class ResearchAgent:
     def get_progress(self) -> Optional[ResearchProgress]:
         """Get current research progress."""
         return self._current_progress
+    
+    def _log_step(self, step: str, details: str = ""):
+        """Log a step for interactive mode.
+        
+        Args:
+            step: Step description (e.g., "🔍 Querying Knowledge Vault")
+            details: Additional details (e.g., "Section: Platform Overview")
+        """
+        if self.log_callback:
+            self.log_callback(step, details)
+        else:
+            # Default logging if no callback
+            if details:
+                print(f"  {step}: {details}")
+            else:
+                print(f"  {step}")
     
     def cancel(self):
         """Request cancellation of current research."""
@@ -2741,6 +2763,7 @@ class ResearchAgent:
                 print(f"  🕷️ Total official docs for Section {section.number}: {len(official_docs_context)} chars ({', '.join(doc_types_to_crawl)})")
         
         # 📚 STEP 1: Query Knowledge Vault (pre-indexed official docs)
+        self._log_step("🔍 Querying Knowledge Vault", f"Section: {section.name}")
         vault_context = ""
         vault_results = []
         if self.knowledge_vault and self.knowledge_vault.has_knowledge(connector_name):
@@ -2767,9 +2790,15 @@ class ResearchAgent:
 ---
 """
                 all_context_parts.append(vault_context)
+                self._log_step("📚 Vault Results", f"{len(vault_results)} chunks found")
                 print(f"  📚 Knowledge Vault provided {len(vault_results)} results for Section {section.number}")
+            else:
+                self._log_step("📚 Vault Results", "No results found")
+        else:
+            self._log_step("📚 Vault Results", "No knowledge available for this connector")
         
         # 🔮 STEP 2: Consult DocWhisperer
+        self._log_step("🔮 Consulting DocWhisperer", f"Topic: {section.name}")
         docwhisperer_context = ""
         whisper = await self.doc_whisperer.get_library_docs(
             library_id=await self.doc_whisperer.resolve_library_id(connector_name) or "",
@@ -2777,6 +2806,7 @@ class ResearchAgent:
         )
         
         if whisper:
+            self._log_step("🔮 DocWhisperer Result", f"Confidence: {whisper.confidence}%")
             citation_tag = "doc:1"
             docwhisperer_context = f"""
 🔮 **DocWhisperer™ Official Documentation Context:**
@@ -2808,12 +2838,14 @@ Confidence: {whisper.confidence}%
         all_indexed_content = vault_results if vault_results else []
         
         # Check if data is sufficient for this specific section
+        self._log_step("🎯 Sufficiency Check", "Validating keyword coverage")
         is_sufficient, missing_keywords = self._is_data_sufficient(all_indexed_content, section)
         
         web_results = ""
         
         if is_sufficient:
             # Data is sufficient - no web search needed
+            self._log_step("✅ Sufficiency Check", "Data sufficient - skipping web search")
             print(f"  ⏭️  Data sufficient for {section.name} - skipping web search")
             web_results = "*Data sufficient from indexed documentation*"
         elif len(official_docs_context) > 500:
@@ -2856,6 +2888,7 @@ Confidence: {whisper.confidence}%
             else:
                 # Last resort: generic web search
                 search_queries = self._get_section_search_queries(connector_name, section.name)
+                self._log_step("🔍 Web Search", f"Query: {search_queries[0] if search_queries else 'N/A'}")
                 
                 all_web_results = []
                 for query in search_queries[:2]:  # Limit to 2 queries per section
@@ -2864,6 +2897,8 @@ Confidence: {whisper.confidence}%
                         all_web_results.append(result)
                 
                 web_results = "\n\n".join(all_web_results) if all_web_results else "No results found"
+                if all_web_results:
+                    self._log_step("🔍 Web Search Results", f"{len(all_web_results)} results found")
         
         # Combine all context sources
         if all_context_parts:
@@ -3006,8 +3041,8 @@ The following objects were found in your pre-indexed documentation. Include ALL 
 {', '.join(vault_objects[:50])}
 
 """
-            
-            user_prompt = f"""Generate Section {section.number}: {section.name} for the {connector_name} connector research document.
+
+        user_prompt = f"""Generate Section {section.number}: {section.name} for the {connector_name} connector research document.
 
 Connector Type: {connector_type}
 Phase: {section.phase_name}
@@ -3092,6 +3127,7 @@ Instead, provide links like: 📚 **Code Examples**: See [Official Docs](url)
 """
 
         try:
+            self._log_step("🤖 LLM Generation", f"Model: {self.model}")
             response = await self.client.chat.completions.create(
                 model=self.model,
                 messages=[
@@ -3112,6 +3148,8 @@ Instead, provide links like: 📚 **Code Examples**: See [Official Docs](url)
             message = response.choices[0].message
             if not hasattr(message, 'content') or message.content is None:
                 raise ValueError("OpenAI API response missing content")
+            
+            self._log_step("✅ Section Generated", f"{len(message.content)} chars")
             
             content = message.content.strip()
             
@@ -4542,9 +4580,17 @@ Documentation Endpoints: {len(docs.get('endpoints_list', []))} documented
 _agent: Optional[ResearchAgent] = None
 
 
-def get_research_agent() -> ResearchAgent:
-    """Get the singleton ResearchAgent instance."""
+def get_research_agent(log_callback: Optional[Callable[[str, str], None]] = None) -> ResearchAgent:
+    """Get the singleton ResearchAgent instance.
+    
+    Args:
+        log_callback: Optional callback for step-by-step logging.
+                     If provided and agent exists, updates its callback.
+    """
     global _agent
     if _agent is None:
-        _agent = ResearchAgent()
+        _agent = ResearchAgent(log_callback=log_callback)
+    elif log_callback is not None:
+        # Update callback if agent already exists
+        _agent.log_callback = log_callback
     return _agent

@@ -39,6 +39,7 @@ pypdf>=3.17.0
 # Utilities
 httpx>=0.26.0
 aiofiles>=23.2.0
+rich>=13.0.0  # For beautiful terminal UI
 
 # Testing
 pytest>=7.0.0
