@@ -2716,16 +2716,7 @@ Instead, provide links like: 📚 **Code Examples**: See [Official Docs](url)
 
 {content}
 
-<details>
-<summary>📌 Section Metadata</summary>
-
-- Generated: {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}
-- Source: Web search + AI synthesis
-
-</details>
-
-[↑ Back to Summary](#-quick-summary-dashboard)
-
+---
 """
             return formatted
             
@@ -2963,17 +2954,7 @@ Generate comprehensive markdown content for this section.
 
 {content}
 
-<details>
-<summary>📌 Section Metadata</summary>
-
-- Generated: {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}
-- Source: Web search + AI synthesis
-- Regeneration: Attempt {attempt_number} (citation validation fix)
-
-</details>
-
-[↑ Back to Summary](#-quick-summary-dashboard)
-
+---
 """
             return formatted
             
@@ -2988,8 +2969,6 @@ Generate comprehensive markdown content for this section.
 ### {section.number}. {section.name}
 
 **Error regenerating section:** {str(e)}
-
-*This section could not be regenerated due to an error. Please try again.*
 
 ---
 """
