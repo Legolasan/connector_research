@@ -233,70 +233,46 @@ def create_sdk_section(method_name: str, section_number: int) -> ResearchSection
         is_method_section=True,
         method_name=method_name,
         prompts=[
-            f"""Generate a comprehensive SDK/Client Library INFORMATION GUIDE for {{connector}}.
-This should be purely informational - NO code examples, NO code snippets.
-Instead, provide links to official documentation.
+            f"""Research SDK/Client Library availability for {{connector}}.
 
-**Official SDK Overview**
+CRITICAL RULES:
+1. ONLY include SDKs that appear in the provided web search results
+2. DO NOT invent or guess GitHub URLs - if a URL is not in the search results, DO NOT include it
+3. If no official SDK exists for a language, state "No official SDK" - do not make up repositories
+4. For Java specifically: If no official Java SDK exists, state clearly "No official Java SDK available - use REST/GraphQL API directly"
+5. Community/third-party SDKs should be labeled as such (e.g., "Community: shopify-api-java by X")
 
-#### 1. Available SDKs
+**SDK Discovery Results**
 
-| Language | Package Name | Repository | Documentation | Status |
-|----------|--------------|------------|---------------|--------|
-| Java | (groupId:artifactId) | [GitHub](link) | [Docs](link) | ✓/✗ |
-| Python | | [GitHub](link) | [Docs](link) | |
-| Node.js | | [GitHub](link) | [Docs](link) | |
-| Ruby | | [GitHub](link) | [Docs](link) | |
-| Go | | [GitHub](link) | [Docs](link) | |
-| PHP | | [GitHub](link) | [Docs](link) | |
+For each language, report ONLY what you found in the search results:
 
-#### 2. SDK Capabilities Matrix
+#### Official SDKs (from vendor)
 
-| Capability | Java | Python | Node.js | Notes |
-|------------|------|--------|---------|-------|
-| OAuth 2.0 | ✓/✗ | ✓/✗ | ✓/✗ | |
-| Pagination | ✓/✗ | ✓/✗ | ✓/✗ | |
-| Rate Limiting | ✓/✗ | ✓/✗ | ✓/✗ | |
-| Bulk Operations | ✓/✗ | ✓/✗ | ✓/✗ | |
-| Retry Logic | ✓/✗ | ✓/✗ | ✓/✗ | |
-| Webhooks | ✓/✗ | ✓/✗ | ✓/✗ | |
+| Language | Status | Repository (if found) | Notes |
+|----------|--------|----------------------|-------|
+| Java | Official/Community/None | (exact URL from search or "Not found") | |
+| Python | Official/Community/None | (exact URL from search or "Not found") | |
+| Node.js | Official/Community/None | (exact URL from search or "Not found") | |
+| Ruby | Official/Community/None | (exact URL from search or "Not found") | |
+| Go | Official/Community/None | (exact URL from search or "Not found") | |
+| PHP | Official/Community/None | (exact URL from search or "Not found") | |
 
-#### 3. Installation Information
+#### Java SDK Recommendation (for Hevo integration)
 
-| Language | Package Manager | Package Name | Latest Version |
-|----------|----------------|--------------|----------------|
-| Java | Maven/Gradle | | |
-| Python | pip | | |
-| Node.js | npm | | |
+| Scenario | Recommendation |
+|----------|----------------|
+| If official Java SDK exists | Use official SDK with Maven coordinates |
+| If only community SDK exists | Evaluate maintenance status before using |
+| If no Java SDK | Use REST API directly with OkHttp/HttpClient |
 
-📚 **Installation Guide**: See [Official SDK Documentation](link)
+#### Alternative Approaches
 
-#### 4. Authentication Support
+If no suitable Java SDK:
+- REST API: Direct HTTP calls (recommended)
+- GraphQL: For platforms that support it
+- Generate client from OpenAPI spec (if available)
 
-| Auth Method | Java SDK | Python SDK | Node.js SDK |
-|-------------|----------|------------|-------------|
-| OAuth 2.0 | ✓/✗ | ✓/✗ | ✓/✗ |
-| API Key | ✓/✗ | ✓/✗ | ✓/✗ |
-| Basic Auth | ✓/✗ | ✓/✗ | ✓/✗ |
-
-📚 **Authentication Examples**: See [Official Auth Guide](link)
-
-#### 5. SDK Limitations & Workarounds
-
-| SDK | Known Limitation | Workaround | Documentation |
-|-----|-----------------|------------|---------------|
-| | | | [Link](url) |
-
-#### 6. Recommendation Summary
-
-| Factor | Recommendation |
-|--------|---------------|
-| Best SDK for Java | (SDK name or "Use REST API directly") |
-| Maintenance Status | (Active/Stable/Deprecated) |
-| Implementation Complexity | Low/Medium/High |
-| Alternative Approach | (if no good SDK exists) |
-
-📚 **Code Examples & Quickstart**: See [Official Getting Started Guide](link)
+DO NOT include links unless they are verified URLs from the search results.
 """
         ]
     )
@@ -318,103 +294,68 @@ def create_method_section(method_name: str, section_number: int) -> ResearchSect
         is_method_section=True,
         method_name=method_name,
         prompts=[
-            f"""Generate a comprehensive INFORMATION GUIDE for {method_name} from {{connector}}. 
-This should be purely informational - NO code examples, NO code snippets.
-Instead, provide links to official documentation where code examples can be found.
+            f"""Research {method_name} for {{connector}}.
+
+CRITICAL RULES:
+1. ONLY include URLs that appear in the provided web search results
+2. DO NOT invent documentation URLs - if not found in search results, omit the link
+3. State "Not documented" for any information not found in sources
 
 **{method_name} Overview**
 
 #### API Endpoint Information
-| Property | Value | Documentation Link |
-|----------|-------|-------------------|
-| Base URL | (actual URL) | [Official Docs](link) |
-| API Version | (version) | |
-| Authentication | (method) | |
+| Property | Value |
+|----------|-------|
+| Base URL | (from search results or "See official docs") |
+| API Version | (from search results or "Not specified") |
+| Authentication | (from search results) |
 
 #### Authentication Requirements
 
-**Required Credentials**
-| Credential | Description | Where to Obtain |
-|------------|-------------|-----------------|
-| (credential name) | (description) | [Portal Link](link) |
-
-**Supported Auth Methods**
 | Method | Supported | Notes |
 |--------|-----------|-------|
-| OAuth 2.0 | Yes/No | |
-| API Key | Yes/No | |
-| Basic Auth | Yes/No | |
-
-📚 **Code Examples**: See [Official Authentication Guide](link-to-docs)
+| OAuth 2.0 | Yes/No/Unknown | |
+| API Key | Yes/No/Unknown | |
+| Basic Auth | Yes/No/Unknown | |
 
 #### Available Objects/Endpoints
 
-| Object | Endpoint | Method | Description |
-|--------|----------|--------|-------------|
-| (Complete table of ALL accessible objects) |
-
-📚 **API Reference**: See [Official API Reference](link-to-docs)
+| Object | Endpoint | Description |
+|--------|----------|-------------|
+| (Only list objects found in search results) |
 
 #### Data Extraction Capabilities
 
-**Full Load Support**
-| Object | Supports Full Load | Notes |
-|--------|-------------------|-------|
-| (list objects) | Yes/No | |
-
-**Incremental Load Support**
-| Object | Cursor Field | Field Type | Supports Incremental |
-|--------|--------------|------------|---------------------|
-| (list objects with their cursor fields) |
+| Object | Full Load | Incremental | Cursor Field |
+|--------|-----------|-------------|--------------|
+| (Only include objects confirmed in sources) |
 
 #### Pagination
 
 | Property | Value |
 |----------|-------|
-| Pagination Type | (cursor/offset/page) |
-| Max Records Per Request | (number) |
-| Page Size Parameter | (parameter name) |
-| Next Page Indicator | (field/header name) |
-
-📚 **Pagination Guide**: See [Official Pagination Docs](link-to-docs)
+| Type | (cursor/offset/page or "Not documented") |
+| Max Per Request | (number or "Not documented") |
 
 #### Rate Limits
 
-| Limit Type | Value | Scope | Reset Period |
-|------------|-------|-------|--------------|
-| (document all rate limits) |
+| Limit Type | Value | Notes |
+|------------|-------|-------|
+| (Only include limits found in search results) |
 
 #### Error Codes
 
-| Error Code | HTTP Status | Meaning | Recommended Action |
-|------------|-------------|---------|-------------------|
-| (list all relevant error codes) |
+| Code | Meaning | Action |
+|------|---------|--------|
+| (Only include errors found in search results) |
 
-📚 **Error Handling Guide**: See [Official Error Reference](link-to-docs)
+#### Summary
 
-#### Best Practices
-
-1. (Best practice 1)
-2. (Best practice 2)
-3. (Best practice 3)
-
-#### Troubleshooting
-
-| Issue | Possible Cause | Resolution |
-|-------|----------------|------------|
-| (common issue 1) | (cause) | (resolution) |
-| (common issue 2) | (cause) | (resolution) |
-
-📚 **Troubleshooting Guide**: See [Official Support Docs](link-to-docs)
-
-#### Pros & Cons Summary
-| Pros | Cons |
-|------|------|
-| (advantage 1) | (disadvantage 1) |
-| (advantage 2) | (disadvantage 2) |
-
-**Best Use Case:** (when to use this method)
-**Avoid When:** (when NOT to use this method)
+| Aspect | Assessment |
+|--------|------------|
+| Best Use Case | (based on findings) |
+| Limitations | (based on findings) |
+| Recommendation | (based on findings) |
 """
         ]
     )
@@ -1916,11 +1857,13 @@ class ResearchAgent:
                 f"{connector_name} paginated responses handling documentation",
             ],
             "sdk": [
-                # Prioritize Java SDK for Hevo integration
-                f"{connector_name} Java SDK Maven Central official client library",
-                f"{connector_name} Java API client library GitHub",
-                f"site:mvnrepository.com {connector_name}",
-                f"{connector_name} official SDK client library",
+                # Search GitHub directly for SDKs - this is how developers actually find them
+                f"{connector_name} java sdk github",
+                f"{connector_name} python sdk github official",
+                f"{connector_name} node sdk npm official",
+                f"{connector_name} sdk client library official documentation",
+                # Maven Central for Java specifically
+                f"site:mvnrepository.com {connector_name} api",
             ],
             "fivetran": [
                 f"Fivetran {connector_name} connector documentation schema",
