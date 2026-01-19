@@ -520,10 +520,11 @@ Create this exact table with Yes or No in the Available column:
 CROSS_CUTTING_SECTIONS = [
     ResearchSection(100, "Authentication Comparison", 3, "Cross-Cutting Concerns", [
         "Compare authentication methods across ALL available extraction methods for {connector}.",
-        "Create a comparison table: Method | Auth Type | Token Lifetime | Refresh Strategy | Scopes Required",
+        "Create a comparison table: Method | Auth Type | Token Lifetime | Refresh Strategy | Documentation Link",
         "Which authentication method is recommended for production ETL pipelines?",
         "What are the security best practices for credential management?",
-        "Link to official authentication documentation for each method."
+        "For each method, provide a direct link to official authentication documentation.",
+        "Note: OAuth scopes should be documented in Section 5 (Authentication Mechanics), not here."
     ]),
     
     ResearchSection(101, "Rate Limiting Strategy", 3, "Cross-Cutting Concerns", [
@@ -1736,6 +1737,26 @@ class ResearchAgent:
         }
         return type_map.get(connector_type.lower(), connector_type.upper())
     
+    def _strip_citation_markers(self, content: str) -> str:
+        """Remove citation markers like [web:1], [vault:1], [doc:1] from content.
+        
+        These markers are useless without actual hyperlinks, so we strip them
+        to avoid confusing users.
+        """
+        import re
+        # Remove citation patterns like [web:1], [vault:2], [doc:3]
+        # Also handles variations like [WEB:1], [Vault:1], etc.
+        citation_pattern = r'\s*\[(web|vault|doc):\d+\]\s*'
+        cleaned = re.sub(citation_pattern, ' ', content, flags=re.IGNORECASE)
+        
+        # Clean up any double spaces created by removal
+        cleaned = re.sub(r'  +', ' ', cleaned)
+        
+        # Clean up trailing spaces before punctuation
+        cleaned = re.sub(r' ([.,;:!?])', r'\1', cleaned)
+        
+        return cleaned
+    
     async def _web_search(self, query: str, connector_name: str = "") -> str:
         """Perform web search using Tavily with official domain prioritization.
         
@@ -2538,31 +2559,26 @@ CRITICAL OUTPUT FORMAT REQUIREMENTS:
    - Documentation Links: Table with links to official API docs, authentication, pagination, and code examples
    - Volume Considerations: Rate limits or pagination specific to high-volume objects
 
-4. Include inline citations like [web:1], [web:2] referencing web search results
-5. If Fivetran context is provided, prioritize that for the Fivetran Support column
-6. List at least 15-30 objects if available, or all objects if fewer exist
-7. DO NOT include code examples or code snippets - only provide links to official documentation
+4. If Fivetran context is provided, prioritize that for the Fivetran Support column
+5. List at least 15-30 objects if available, or all objects if fewer exist
+6. DO NOT include code examples or code snippets - only provide links to official documentation
+7. DO NOT include citation markers like [web:1], [vault:1] - instead provide actual hyperlinks to sources
 """
         else:
             system_prompt = """You are an expert technical writer specializing in data integration and ETL connector development.
 Your task is to write detailed, production-grade documentation for connector research.
 
-CRITICAL CITATION REQUIREMENTS:
-- Every factual claim (numbers, endpoints, scopes, rate limits, 'supports'/'requires' statements) MUST include inline citations like [web:1], [vault:1], [doc:1]
-- Citations must be within 250 characters of the claim
-- Table rows must include citations at the end of each row
-- Claims without citations will be rejected and require regeneration
-
 Requirements:
 - Write 8-10 detailed sentences per subsection
 - Include exact values from documentation (OAuth scopes, permissions, rate limits)
 - Use markdown tables where appropriate
-- Include inline citations like [web:1], [web:2], [vault:1] referencing search results
 - When Knowledge Vault context is provided, PRIORITIZE that as the most authoritative source
 - When DocWhisperer context is provided, use it as secondary authoritative source
 - When structured context is provided (from Connector_Code, Connector_SDK, Public_Documentation), prioritize that information
 - Focus on data extraction (read operations), not write operations
 - If information is not available, explicitly state "N/A - not documented" or "N/A - not supported"
+- DO NOT include citation markers like [web:1], [vault:1], [doc:1] - instead provide actual hyperlinks to source documentation
+- When referencing a source, use markdown links: [Source Name](https://actual-url.com)
 """
 
         # Build section-specific context from structured data
@@ -2888,30 +2904,20 @@ Confidence: {whisper.confidence}%
         
         # ENHANCED system prompt with failure report context
         system_prompt = f"""You are an expert technical writer specializing in data integration and ETL connector development.
-Your task is to REGENERATE a section that failed citation validation.
+Your task is to REGENERATE a section that needs improvement.
 
 ⚠️ REGENERATION ATTEMPT {attempt_number}/3 ⚠️
-
-The previous version of this section was REJECTED because of missing citations.
 
 FAILURE REPORT FROM PREVIOUS ATTEMPT:
 {failure_report}
 
-CRITICAL REQUIREMENTS FOR THIS REGENERATION:
-1. Every factual claim (numbers, endpoints, scopes, rate limits, 'supports'/'requires' statements) MUST include inline citations like [web:1], [vault:1], [doc:1]
-2. Citations must be within 250 characters of the claim they support
-3. Table rows must include citations at the end of each row
-4. If you cannot find a citation for a claim, rewrite it as "N/A - not documented" or "Unknown - requires verification"
-5. DO NOT make up citations - only use citation tags that exist in the provided context
-
-AVAILABLE CITATION TAGS:
-- [web:1], [web:2], [web:3] - from web search results
-- [vault:1], [vault:2], [vault:3] - from Knowledge Vault (highest confidence)
-- [doc:1] - from DocWhisperer official documentation
-
-FIX THE SPECIFIC ISSUES listed in the failure report above. Either:
-a) Add appropriate citations to the claims, OR
-b) Rewrite uncited claims as "Unknown" or "N/A - not documented"
+REQUIREMENTS:
+1. Provide accurate, factual information from the provided context
+2. If you cannot verify a claim, state "Not documented" or "Requires verification"
+3. Use markdown tables where appropriate
+4. Focus on data extraction (read operations), not write operations
+5. DO NOT include citation markers like [web:1], [vault:1], [doc:1]
+6. Instead, provide actual hyperlinks to source documentation: [Source Name](https://url.com)
 """
 
         # Build section-specific context from structured data
@@ -2921,7 +2927,7 @@ b) Rewrite uncited claims as "Unknown" or "N/A - not documented"
 
         user_prompt = f"""REGENERATE Section {section.number}: {section.name} for the {connector_name} connector research document.
 
-This is attempt {attempt_number}/3. Previous attempt failed citation validation.
+This is attempt {attempt_number}/3.
 
 Connector Type: {connector_type}
 Phase: {section.phase_name}
@@ -2937,9 +2943,8 @@ Web Search Results (including DocWhisperer™ official docs if available):
 {f"Structured Repository Context:{chr(10)}{section_context}" if section_context else ""}
 {f"Hevo Connector Code Context:{chr(10)}{hevo_context_str}" if hevo_context and hevo_context_str else ""}
 
-⚠️ REMEMBER: You MUST fix the citation issues from the failure report. Add citations or mark claims as Unknown/N/A.
-
-Generate comprehensive markdown content for this section with PROPER CITATIONS.
+IMPORTANT: Provide actual hyperlinks to documentation sources, NOT citation markers like [web:1].
+Generate comprehensive markdown content for this section.
 """
 
         try:
@@ -4010,6 +4015,9 @@ Generate comprehensive markdown content for this section with PROPER CITATIONS.
         
         # Combine all parts
         full_document = header + quick_summary + '\n'.join(document_parts)
+        
+        # Post-process to remove useless citation markers like [web:1], [vault:1], [doc:1]
+        full_document = self._strip_citation_markers(full_document)
         
         # Add final deliverables section
         final_section = f"""

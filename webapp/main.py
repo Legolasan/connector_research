@@ -399,9 +399,57 @@ async def view_research_page(request: Request, connector_id: str):
     # Get known methods for this connector (supplements parsed methods)
     known_methods = _get_known_connector_methods(connector.name)
     
-    # Convert markdown to HTML with proper code block handling
-    md = markdown.Markdown(extensions=['tables', 'fenced_code', 'toc', 'nl2br'])
+    # Convert markdown to HTML with proper table and code block handling
+    # Use 'extra' extension which includes tables, fenced_code, and more
+    md = markdown.Markdown(
+        extensions=['extra', 'toc', 'nl2br', 'sane_lists'],
+        extension_configs={
+            'extra': {},
+            'toc': {'permalink': False}
+        }
+    )
     html_content = md.convert(content)
+    
+    # Post-process to ensure tables have proper structure
+    # (in case markdown tables weren't recognized)
+    import re as regex
+    
+    def convert_raw_tables(text):
+        """Convert any remaining markdown tables that weren't parsed."""
+        table_pattern = r'(\|[^\n]+\|)\n(\|[-:| ]+\|)\n((?:\|[^\n]+\|\n?)+)'
+        
+        def table_replacer(match):
+            header_row = match.group(1)
+            separator = match.group(2)
+            body = match.group(3)
+            
+            # Parse header
+            headers = [h.strip() for h in header_row.strip('|').split('|')]
+            
+            # Parse body rows
+            rows = []
+            for row in body.strip().split('\n'):
+                if row.strip():
+                    cells = [c.strip() for c in row.strip('|').split('|')]
+                    rows.append(cells)
+            
+            # Build HTML table
+            html = '<table><thead><tr>'
+            for h in headers:
+                html += f'<th>{h}</th>'
+            html += '</tr></thead><tbody>'
+            for row in rows:
+                html += '<tr>'
+                for cell in row:
+                    html += f'<td>{cell}</td>'
+                html += '</tr>'
+            html += '</tbody></table>'
+            return html
+        
+        return regex.sub(table_pattern, table_replacer, text)
+    
+    # Apply fallback table conversion
+    html_content = convert_raw_tables(html_content)
     
     # Ensure code blocks have proper structure (fenced_code should handle this, but verify)
     # The fenced_code extension generates: <pre><code class="language-{lang}">code</code></pre>
