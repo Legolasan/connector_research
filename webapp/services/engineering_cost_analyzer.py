@@ -30,7 +30,7 @@ class EngineeringCostAnalyzer:
     def __init__(self):
         """Initialize the engineering cost analyzer."""
         self.openai_api_key = os.getenv("OPENAI_API_KEY")
-        self.model = os.getenv("RESEARCH_MODEL", "gpt-4o")
+        self.model = os.getenv("RESEARCH_MODEL", "gpt-5-mini-2025-08-07")
         
         if not self.openai_api_key:
             raise ValueError("OPENAI_API_KEY is required")
