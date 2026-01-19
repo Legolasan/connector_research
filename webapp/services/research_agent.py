@@ -2529,57 +2529,74 @@ Confidence: {whisper.confidence}%
         
         prompts_text = "\n".join(f"- {p.replace('{connector}', connector_name)}" for p in filtered_prompts)
         
+        # Base system prompt for all sections
+        base_system_prompt = """You are an expert technical writer specializing in data integration platforms and ETL connector development.
+
+You write for senior engineers and product teams.
+Assume the reader already understands APIs, OAuth, schemas, and data pipelines.
+
+Your responsibilities:
+- Synthesize information strictly from provided sources.
+- Prefer precision over verbosity.
+- Use exact terminology used in the official documentation.
+- Do not invent features, limits, or behaviors.
+- If information is missing or unclear, explicitly state "Not documented" or "Requires verification".
+
+Content rules:
+- Avoid introductory or tutorial-style explanations.
+- Avoid marketing language.
+- Avoid speculative statements.
+- Deduplicate overlapping information across sources.
+- When multiple sources disagree, surface the discrepancy clearly.
+- Focus on data extraction (read operations), not write operations.
+
+Structure rules:
+- Use clear sections and bullet points.
+- Group information by functional areas (authentication, endpoints, limits, behavior).
+- Keep API behavior factual and implementation-oriented.
+- Use markdown tables for structured data.
+
+Failure mode:
+- If the sources do not support a claim, do not guess.
+- If an answer cannot be completed with confidence, say so.
+
+Source priority (highest to lowest):
+1. Knowledge Vault (pre-indexed official docs)
+2. DocWhisperer (crawled official docs)
+3. Structured context (Connector_Code, Connector_SDK, Public_Documentation)
+4. Web search results
+
+DO NOT include citation markers like [web:1], [vault:1]. Instead, use actual hyperlinks: [Source](https://url.com)
+"""
+        
         # Special system prompt for Section 19 (Object Catalog)
         if section.number == 19:
-            system_prompt = """You are an expert technical writer specializing in data integration and ETL connector development.
-Your task is to create a comprehensive Object Catalog for connector research.
+            system_prompt = base_system_prompt + """
+OBJECT CATALOG SPECIFIC REQUIREMENTS:
 
-CRITICAL OUTPUT FORMAT REQUIREMENTS:
-1. Start with a markdown table listing ALL available objects with these exact columns:
-   | Object | Extraction Method | Primary Key | Cursor Field | Parent | Permissions | Delete Method | Fivetran Support |
-   
-2. The table should include:
-   - Object: Name of the entity/object (e.g., accounts, contacts, orders)
-   - Extraction Method: Exact API endpoint or method (e.g., "GET /v1/accounts", "GraphQL query accounts", "SOAP GetAccounts")
-   - Primary Key: The unique identifier field (e.g., id, account_id)
-   - Cursor Field: Field for incremental sync (e.g., updated_at, modified_date) or "-" if full load only
-   - Parent: Parent object name if this is a child entity, or "-" if top-level
-   - Permissions: Required scopes/permissions (e.g., read:accounts, accounts.read)
-   - Delete Method: How to detect deleted records. Use one of:
-     * "Soft Delete (field_name)" - e.g., "Soft Delete (is_deleted)", "Soft Delete (deleted_at)"
-     * "Deleted Endpoint" - API provides GET /deleted_records or similar
-     * "Webhook (event_name)" - e.g., "Webhook (record.deleted)"
-     * "Audit Log" - Deletions tracked in audit/activity endpoint
-     * "None" - Hard deletes only, no detection available
-   - Fivetran Support: "✓" if supported by Fivetran, "✗" if not, or "?" if unknown
+Output a markdown table with ALL available objects using these exact columns:
+| Object | Extraction Method | Primary Key | Cursor Field | Parent | Permissions | Delete Method | Fivetran Support |
 
-3. After the table, include:
-   - Replication Strategy Notes: List objects by category (Full Load Only, Incremental, CDC-capable)
-   - Delete Detection Summary: Group objects by delete method
-   - Documentation Links: Table with links to official API docs, authentication, pagination, and code examples
-   - Volume Considerations: Rate limits or pagination specific to high-volume objects
+Column definitions:
+- Object: Entity name (e.g., accounts, contacts, orders)
+- Extraction Method: Exact API endpoint (e.g., "GET /v1/accounts", "GraphQL query accounts")
+- Primary Key: Unique identifier field (e.g., id, account_id)
+- Cursor Field: Field for incremental sync (e.g., updated_at) or "-" if full load only
+- Parent: Parent object name or "-" if top-level
+- Permissions: Required scopes (e.g., read:accounts)
+- Delete Method: One of: "Soft Delete (field)", "Deleted Endpoint", "Webhook (event)", "Audit Log", "None"
+- Fivetran Support: "✓" supported, "✗" not supported, "?" unknown
 
-4. If Fivetran context is provided, prioritize that for the Fivetran Support column
-5. List at least 15-30 objects if available, or all objects if fewer exist
-6. DO NOT include code examples or code snippets - only provide links to official documentation
-7. DO NOT include citation markers like [web:1], [vault:1] - instead provide actual hyperlinks to sources
+After the table, include:
+- Replication Strategy Notes: Objects grouped by Full Load, Incremental, CDC-capable
+- Delete Detection Summary: Objects grouped by delete method
+- Documentation Links: Links to official API docs
+- Volume Considerations: Rate limits for high-volume objects
+
+List 15-30 objects minimum. Do not include code examples.
 """
         else:
-            system_prompt = """You are an expert technical writer specializing in data integration and ETL connector development.
-Your task is to write detailed, production-grade documentation for connector research.
-
-Requirements:
-- Write 8-10 detailed sentences per subsection
-- Include exact values from documentation (OAuth scopes, permissions, rate limits)
-- Use markdown tables where appropriate
-- When Knowledge Vault context is provided, PRIORITIZE that as the most authoritative source
-- When DocWhisperer context is provided, use it as secondary authoritative source
-- When structured context is provided (from Connector_Code, Connector_SDK, Public_Documentation), prioritize that information
-- Focus on data extraction (read operations), not write operations
-- If information is not available, explicitly state "N/A - not documented" or "N/A - not supported"
-- DO NOT include citation markers like [web:1], [vault:1], [doc:1] - instead provide actual hyperlinks to source documentation
-- When referencing a source, use markdown links: [Source Name](https://actual-url.com)
-"""
+            system_prompt = base_system_prompt
 
         # Build section-specific context from structured data
         section_context = ""
@@ -2902,22 +2919,28 @@ Confidence: {whisper.confidence}%
         
         prompts_text = "\n".join(f"- {p.replace('{connector}', connector_name)}" for p in filtered_prompts)
         
-        # ENHANCED system prompt with failure report context
-        system_prompt = f"""You are an expert technical writer specializing in data integration and ETL connector development.
-Your task is to REGENERATE a section that needs improvement.
+        # System prompt for regeneration - technical editor mode
+        system_prompt = f"""You are acting as a technical editor for data integration documentation.
 
-⚠️ REGENERATION ATTEMPT {attempt_number}/3 ⚠️
+Regeneration attempt {attempt_number}/3.
 
-FAILURE REPORT FROM PREVIOUS ATTEMPT:
+Previous version issues:
 {failure_report}
 
-REQUIREMENTS:
-1. Provide accurate, factual information from the provided context
-2. If you cannot verify a claim, state "Not documented" or "Requires verification"
-3. Use markdown tables where appropriate
-4. Focus on data extraction (read operations), not write operations
-5. DO NOT include citation markers like [web:1], [vault:1], [doc:1]
-6. Instead, provide actual hyperlinks to source documentation: [Source Name](https://url.com)
+Your task:
+- Merge and improve the content based on provided sources.
+- Remove redundancy.
+- Resolve conflicts explicitly (state when sources disagree).
+- Ensure terminology is consistent with official documentation.
+- Preserve only information supported by sources.
+
+Rules:
+- Do not introduce new information beyond what sources provide.
+- Do not soften or generalize technical constraints.
+- If information cannot be verified, state "Not documented".
+- Use markdown tables for structured data.
+- Focus on data extraction (read operations).
+- Use actual hyperlinks [Source](https://url.com), not citation markers.
 """
 
         # Build section-specific context from structured data
