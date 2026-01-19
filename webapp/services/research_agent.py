@@ -297,18 +297,21 @@ def create_method_section(method_name: str, section_number: int) -> ResearchSect
             f"""Research {method_name} for {{connector}}.
 
 CRITICAL RULES:
-1. ONLY include URLs that appear in the provided web search results
-2. DO NOT invent documentation URLs - if not found in search results, omit the link
-3. State "Not documented" for any information not found in sources
+1. Extract Base URL from example requests/curl commands in the documentation (look for patterns like https://{{subdomain}}.example.com/api/v2/)
+2. Extract API Version from the URL path or version headers (e.g., /v2/, /v1/, /api/v2/)
+3. Check the "Security and authentication" or "Authentication" section for auth methods
+4. Look at the API introduction/overview page for rate limits, request format, response format, pagination
+5. If information is in the provided sources, EXTRACT IT - do not say "Not documented"
+6. Only say "Not documented" if you've thoroughly searched all provided sources and cannot find it
 
 **{method_name} Overview**
 
 #### API Endpoint Information
 | Property | Value |
 |----------|-------|
-| Base URL | (from search results or "See official docs") |
-| API Version | (from search results or "Not specified") |
-| Authentication | (from search results) |
+| Base URL | Extract from example URLs in documentation (e.g., https://{{subdomain}}.example.com/api/v2/) |
+| API Version | Extract from URL path or version headers (e.g., v2, v1, 2024-01) |
+| Authentication | List all supported methods from authentication section (OAuth, API Key, Basic Auth, etc.) |
 
 #### Authentication Requirements
 
@@ -1362,10 +1365,17 @@ class ResearchAgent:
             elif section_type == "graphql_objects" and hasattr(doc_config, 'graphql_objects') and doc_config.graphql_objects:
                 urls_to_crawl = [doc_config.graphql_objects]
             elif section_type == "rest_resources":
+                urls_to_crawl = []
+                # Always include introduction page if available (has base URL, version, auth info)
+                intro_urls = [url for url in doc_config.official_docs if 'introduction' in url.lower()]
+                urls_to_crawl.extend(intro_urls)
+                # Add rest_resources or api_reference
                 if hasattr(doc_config, 'rest_resources') and doc_config.rest_resources:
-                    urls_to_crawl = [doc_config.rest_resources]
+                    if doc_config.rest_resources not in urls_to_crawl:
+                        urls_to_crawl.append(doc_config.rest_resources)
                 elif doc_config.api_reference:
-                    urls_to_crawl = [doc_config.api_reference]
+                    if doc_config.api_reference not in urls_to_crawl:
+                        urls_to_crawl.append(doc_config.api_reference)
             elif section_type == "rate_limits" and doc_config.rate_limit_docs:
                 urls_to_crawl = [doc_config.rate_limit_docs]
             elif section_type == "webhooks" and doc_config.webhooks_docs:
@@ -2693,7 +2703,8 @@ class ResearchAgent:
         elif "graphql" in section_name_lower:
             doc_types_to_crawl = ["graphql_objects"]
         elif "rest" in section_name_lower or "object" in section_name_lower or "endpoint" in section_name_lower:
-            doc_types_to_crawl = ["rest_resources"]
+            # For REST API, also crawl general/introduction docs for base URL, version, auth info
+            doc_types_to_crawl = ["general", "rest_resources"]
         elif "rate" in section_name_lower or "limit" in section_name_lower:
             doc_types_to_crawl = ["rate_limits"]
         elif "webhook" in section_name_lower:
@@ -2894,7 +2905,11 @@ Your responsibilities:
 - Prefer precision over verbosity.
 - Use exact terminology used in the official documentation.
 - Do not invent features, limits, or behaviors.
-- If information is missing or unclear, explicitly state "Not documented" or "Requires verification".
+- **CRITICAL**: Thoroughly search ALL provided sources (introduction pages, API reference, examples, curl commands) before stating "Not documented".
+- Extract Base URLs from example requests (look for patterns like https://{subdomain}.example.com/api/v2/).
+- Extract API versions from URL paths, headers, or version documentation.
+- Extract authentication methods from authentication/security sections.
+- Only state "Not documented" if you have searched all provided sources and cannot find the information.
 
 Content rules:
 - Avoid introductory or tutorial-style explanations.
