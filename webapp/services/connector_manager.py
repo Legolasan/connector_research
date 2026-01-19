@@ -548,6 +548,11 @@ class ConnectorManager:
         
         # Update new fields from ResearchProgress if provided
         if research_progress:
+            # CRITICAL: Copy sections_completed from research agent's progress
+            if hasattr(research_progress, 'sections_completed') and research_progress.sections_completed:
+                progress.sections_completed = list(research_progress.sections_completed)
+            if hasattr(research_progress, 'total_sections') and research_progress.total_sections > 0:
+                progress.total_sections = research_progress.total_sections
             if hasattr(research_progress, 'section_reviews'):
                 progress.section_reviews = research_progress.section_reviews
             if hasattr(research_progress, 'stop_the_line_events'):

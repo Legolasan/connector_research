@@ -564,6 +564,20 @@ def _connector_to_response(connector) -> ConnectorResponse:
             schema_info_url=connector.fivetran_urls.schema_info_url
         )
     
+    # Fix progress for completed connectors that have empty sections_completed
+    progress = connector.progress
+    sections_completed = progress.sections_completed
+    total_sections = progress.total_sections
+    percentage = progress.percentage
+    
+    # If status is complete but sections_completed is empty or percentage is wrong, fix it
+    if connector.status == 'complete':
+        if total_sections == 0:
+            total_sections = 29  # Default estimate
+        if not sections_completed or len(sections_completed) < total_sections:
+            sections_completed = list(range(1, total_sections + 1))
+        percentage = 100.0
+    
     return ConnectorResponse(
         id=connector.id,
         name=connector.name,
@@ -578,13 +592,13 @@ def _connector_to_response(connector) -> ConnectorResponse:
         vectors_count=connector.vectors_count,
         fivetran_parity=connector.fivetran_parity,
         progress=ConnectorProgressResponse(
-            current_section=connector.progress.current_section,
-            total_sections=connector.progress.total_sections,
-            current_phase=connector.progress.current_phase,
-            sections_completed=connector.progress.sections_completed,
-            percentage=connector.progress.percentage,
-            current_section_name=connector.progress.current_section_name,
-            discovered_methods=connector.progress.discovered_methods if hasattr(connector.progress, 'discovered_methods') else []
+            current_section=progress.current_section if connector.status != 'complete' else total_sections,
+            total_sections=total_sections,
+            current_phase=progress.current_phase,
+            sections_completed=sections_completed,
+            percentage=percentage,
+            current_section_name=progress.current_section_name if connector.status != 'complete' else "Complete",
+            discovered_methods=progress.discovered_methods if hasattr(progress, 'discovered_methods') else []
         ),
         created_at=connector.created_at,
         updated_at=connector.updated_at,
