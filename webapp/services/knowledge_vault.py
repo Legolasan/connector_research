@@ -28,7 +28,7 @@ from openai import OpenAI
 from sqlalchemy import text
 from dotenv import load_dotenv
 
-from services.database import (
+from .database import (
     get_db_session, is_database_available, init_database,
     DocumentChunkModel, PGVECTOR_AVAILABLE, PGVECTOR_EXTENSION_AVAILABLE, EMBEDDING_DIMENSION
 )

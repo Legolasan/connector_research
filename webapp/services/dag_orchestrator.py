@@ -5,7 +5,7 @@ Manages section-level parallelism and agent coordination for research generation
 
 from typing import List, Dict, Any, Optional
 from dataclasses import dataclass, field
-from services.research_agent import ResearchSection
+from .research_agent import ResearchSection
 
 
 @dataclass

@@ -23,14 +23,14 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Import Celery app
-from services.celery_app import celery_app
+from .celery_app import celery_app
 
 # Import services
-from services.artifact_store import (
+from .artifact_store import (
     ArtifactStore, Artifact, Fact, 
     get_artifact_store, emit_progress
 )
-from services.cache import ResearchCache, get_research_cache
+from .cache import ResearchCache, get_research_cache
 
 # Environment
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")

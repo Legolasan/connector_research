@@ -5,8 +5,8 @@ Resolves contradictions using confidence-weighted approach.
 
 from typing import Optional
 from dataclasses import dataclass
-from services.contradiction_detector import Contradiction
-from services.uncertainty_model import UncertaintyModel, SourceType
+from .contradiction_detector import Contradiction
+from .uncertainty_model import UncertaintyModel, SourceType
 from typing import Any
 
 

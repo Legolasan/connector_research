@@ -27,7 +27,7 @@ import httpx
 
 from dotenv import load_dotenv
 
-from services.doc_registry import get_connector_docs, get_official_doc_urls, get_connector_domain
+from .doc_registry import get_connector_docs, get_official_doc_urls, get_connector_domain
 
 load_dotenv()
 
