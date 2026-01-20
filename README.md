@@ -232,18 +232,48 @@ worker: cd webapp && celery -A services.celery_app worker --loglevel=info --conc
 
 ## 📖 Usage
 
-### Creating a Connector
+### Creating a Connector (CLI Only)
 
-1. Navigate to the web interface
-2. Click "Create New Connector"
-3. Fill in:
-   - **Connector name** (e.g., "Shopify")
-   - **Connector type** (or "auto" for discovery)
-   - **GitHub URL** (optional, for code analysis)
-   - **Hevo GitHub URL** (optional, for comparison)
-   - **Fivetran URLs** (optional, for parity comparison)
-   - **Official Documentation URLs** (optional, for pre-crawling)
-4. Click "Create Connector"
+Connectors are created using the interactive CLI tool. The web UI is for viewing and managing existing connectors only.
+
+**Basic Usage:**
+```bash
+python scripts/research_cli.py <connector_name> --interactive
+```
+
+**With GitHub Repository:**
+```bash
+python scripts/research_cli.py Shopify --interactive --github-url https://github.com/shopify/shopify-api-ruby
+```
+
+**With Custom Documentation URLs:**
+```bash
+python scripts/research_cli.py Zendesk --interactive --doc-urls https://developer.zendesk.com/api-reference https://developer.zendesk.com/documentation
+```
+
+**With Output File:**
+```bash
+python scripts/research_cli.py Shopify --interactive --output shopify_research.md
+```
+
+**Full Options:**
+```bash
+python scripts/research_cli.py <connector_name> \
+    --interactive \
+    --connector-type auto \
+    --github-url <github_repo_url> \
+    --doc-urls <url1> <url2> ... \
+    --output <output_file.md>
+```
+
+The interactive CLI will:
+1. Crawl and index official documentation
+2. Clone and analyze GitHub repositories (if provided)
+3. Generate research sections one-by-one
+4. Allow you to review, approve, reject, refine, or skip each section
+5. Save the final research document
+
+After creation, connectors will appear in the web UI for viewing and management.
 
 ### Pre-Indexing Documentation (Knowledge Vault)
 
@@ -257,9 +287,9 @@ worker: cd webapp && celery -A services.celery_app worker --loglevel=info --conc
 3. Upload PDFs or paste documentation text
 4. Documents are automatically chunked and indexed
 
-### Generating Research
+### Generating Research (Web UI)
 
-1. Click "Generate Research" on a connector
+1. Click "Generate Research" on a connector (created via CLI)
 2. Monitor real-time progress:
    - Phase indicators (search → fetch → summarize → synthesize)
    - Fact counts by category

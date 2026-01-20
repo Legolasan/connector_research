@@ -98,15 +98,17 @@
             <div class="p-6 border-b border-white/5 flex items-center justify-between">
                 <div>
                 <h2 class="text-xl font-semibold text-white">Connector Dashboard</h2>
-                    <p class="text-sm text-gray-400 mt-1">Create and manage connector research projects</p>
+                    <p class="text-sm text-gray-400 mt-1">View and manage connector research projects</p>
                 </div>
-                <button @click="showNewConnectorModal = true" 
-                        class="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 rounded-xl font-medium transition-colors flex items-center gap-2">
-                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path>
-                    </svg>
-                    New Connector
-                </button>
+                <!-- Connector creation moved to CLI only -->
+                <div class="px-4 py-2 bg-blue-500/20 border border-blue-500/30 rounded-xl text-sm">
+                    <div class="flex items-center gap-2 text-blue-300">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                        </svg>
+                        <span>Create connectors via CLI: <code class="bg-black/40 px-2 py-1 rounded">python scripts/research_cli.py &lt;connector_name&gt; --interactive</code></span>
+                    </div>
+                </div>
             </div>
             
             <!-- Connectors Grid -->
@@ -313,16 +315,21 @@
                         </div>
                     </template>
                     
-                    <!-- Add New Card -->
-                    <div @click="showNewConnectorModal = true" 
-                         class="bg-black/20 border-2 border-dashed border-white/20 hover:border-indigo-500/50 rounded-2xl p-5 flex flex-col items-center justify-center min-h-[280px] cursor-pointer transition-all group">
-                        <div class="w-16 h-16 rounded-full bg-white/5 group-hover:bg-indigo-500/20 flex items-center justify-center mb-4 transition-colors">
-                            <svg class="w-8 h-8 text-gray-400 group-hover:text-indigo-400 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path>
+                    <!-- CLI Info Card (replaces Add New Card) -->
+                    <div class="bg-black/20 border-2 border-dashed border-blue-500/30 rounded-2xl p-5 flex flex-col items-center justify-center min-h-[280px]">
+                        <div class="w-16 h-16 rounded-full bg-blue-500/20 flex items-center justify-center mb-4">
+                            <svg class="w-8 h-8 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
                             </svg>
                         </div>
-                        <div class="text-gray-400 group-hover:text-white font-medium transition-colors">Add New Connector</div>
-                        <div class="text-gray-500 text-sm mt-1">Click to start research</div>
+                        <div class="text-blue-300 font-medium text-center mb-2">Create via CLI</div>
+                        <div class="text-gray-400 text-xs text-center px-4">
+                            Connectors are created using the interactive CLI tool
+                        </div>
+                        <div class="mt-4 bg-black/40 border border-blue-500/20 rounded-lg px-3 py-2 font-mono text-xs text-blue-200">
+                            python scripts/research_cli.py<br/>
+                            &nbsp;&nbsp;&lt;connector_name&gt; --interactive
+                        </div>
                     </div>
                 </div>
             </div>
@@ -877,214 +884,7 @@
         </div>
     </div>
     
-    <!-- New Connector Modal -->
-    <div x-show="showNewConnectorModal" x-cloak 
-         class="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4"
-         @click.self="showNewConnectorModal = false">
-        <div class="bg-gray-900 border border-white/10 rounded-3xl p-8 max-w-xl w-full mx-4 shadow-2xl max-h-[90vh] overflow-y-auto">
-            <div class="flex items-center justify-between mb-6">
-                <h2 class="text-2xl font-bold text-white">Create New Connector</h2>
-                <button @click="showNewConnectorModal = false" class="w-10 h-10 rounded-xl bg-white/5 hover:bg-white/10 flex items-center justify-center transition-colors">
-                    <svg class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
-                    </svg>
-                    </button>
-            </div>
-            
-            <form @submit.prevent="createConnector()">
-                <div class="space-y-5">
-                    <div>
-                        <label class="block text-sm font-medium text-gray-300 mb-2">Connector Name *</label>
-                        <input type="text" x-model="newConnector.name" required
-                               placeholder="e.g., Facebook Ads, Salesforce, Stripe"
-                               class="w-full px-4 py-3 bg-black/40 border border-white/10 rounded-xl focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none transition-all text-white placeholder-gray-500">
-                        <p class="text-xs text-gray-500 mt-2">The research will auto-discover all available extraction methods (REST, GraphQL, Webhooks, etc.)</p>
-                    </div>
-                    
-                    <div>
-                        <label class="block text-sm font-medium text-gray-300 mb-2">GitHub Repository URL (Optional)</label>
-                        <input type="text" x-model="newConnector.github_url"
-                               placeholder="https://github.com/owner/repo"
-                               class="w-full px-4 py-3 bg-black/40 border border-white/10 rounded-xl focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none transition-all text-white placeholder-gray-500">
-                        <p class="text-xs text-gray-500 mt-2">Provide a GitHub URL to analyze existing SDKs and code patterns</p>
-                    </div>
-                    
-                    <!-- Hevo Connector GitHub URL (Optional) -->
-                    <div>
-                        <label class="block text-sm font-medium text-gray-300 mb-2">Hevo Connector GitHub URL <span class="text-gray-500">(Optional)</span></label>
-                        <input type="text" x-model="newConnector.hevo_github_url"
-                               placeholder="https://github.com/owner/hevo-connector-repo"
-                               class="w-full px-4 py-3 bg-black/40 border border-white/10 rounded-xl focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none transition-all text-white placeholder-gray-500">
-                        <p class="text-xs text-gray-500 mt-2">Optional: GitHub URL for Hevo connector implementation (for comparison with Fivetran)</p>
-                    </div>
-                    
-                    <!-- Official Documentation URLs (Optional) -->
-                    <div class="border border-white/10 rounded-xl overflow-hidden">
-                        <button type="button" @click="showOfficialDocsInputs = !showOfficialDocsInputs"
-                                class="flex items-center justify-between w-full px-4 py-3 bg-black/20 hover:bg-black/30 transition-colors">
-                            <div class="flex items-center gap-3">
-                                <svg class="w-5 h-5 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"></path>
-                                </svg>
-                                <span class="font-medium text-emerald-300">Official Documentation (Optional)</span>
-                            </div>
-                            <svg class="w-5 h-5 text-gray-400 transition-transform duration-200" 
-                                 :class="showOfficialDocsInputs ? 'rotate-180' : ''"
-                                 fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
-                            </svg>
-                        </button>
-                        
-                        <div x-show="showOfficialDocsInputs" x-collapse class="px-4 pb-4 space-y-4">
-                            <p class="text-xs text-gray-500 pt-2">
-                                Add official API documentation URLs to pre-crawl before research. 
-                                <span class="text-emerald-400">Leave empty to auto-detect from registry or discover via search.</span>
-                            </p>
-                            
-                            <div>
-                                <label class="block text-xs font-medium text-gray-400 mb-1">Documentation URLs (one per line)</label>
-                                <textarea x-model="newConnector.official_doc_urls"
-                                          rows="4"
-                                          placeholder="https://developer.example.com/docs/api&#10;https://developer.example.com/docs/authentication&#10;https://developer.example.com/docs/rate-limits"
-                                          class="w-full px-3 py-2 bg-black/40 border border-white/10 rounded-lg focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none transition-all text-white placeholder-gray-500 text-sm font-mono"></textarea>
-                                <p class="text-xs text-gray-600 mt-1">
-                                    These URLs will be crawled (2-3 levels deep) and indexed into Knowledge Vault before research starts.
-                                </p>
-                            </div>
-                            
-                            <div class="flex items-start gap-2 p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-lg">
-                                <svg class="w-4 h-4 text-emerald-400 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-                                </svg>
-                                <p class="text-xs text-emerald-300">
-                                    <strong>Pro tip:</strong> Include API reference, authentication docs, and rate limit pages for best results.
-                                    The crawler will follow links within the same domain.
-                                </p>
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <!-- Fivetran Parity Section (Collapsible) -->
-                    <div class="border border-white/10 rounded-xl overflow-hidden">
-                        <button type="button" @click="showFivetranInputs = !showFivetranInputs"
-                                class="flex items-center justify-between w-full px-4 py-3 bg-black/20 hover:bg-black/30 transition-colors">
-                            <div class="flex items-center gap-3">
-                                <svg class="w-5 h-5 text-orange-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path>
-                                </svg>
-                                <span class="font-medium text-orange-300">Fivetran Parity (Optional)</span>
-                            </div>
-                            <svg class="w-5 h-5 text-gray-400 transition-transform duration-200" 
-                                 :class="showFivetranInputs ? 'rotate-180' : ''"
-                                 fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
-                            </svg>
-                        </button>
-                        
-                        <div x-show="showFivetranInputs" x-collapse class="px-4 pb-4 space-y-4">
-                            <p class="text-xs text-gray-500 pt-2">Add Fivetran documentation URLs to compare object support, sync modes, and features.</p>
-                            
-                            <div>
-                                <label class="block text-xs font-medium text-gray-400 mb-1">Setup Guide URL</label>
-                                <input type="text" x-model="newConnector.fivetran_urls.setup_guide_url"
-                                       placeholder="https://fivetran.com/docs/connectors/.../setup-guide"
-                                       class="w-full px-3 py-2 bg-black/40 border border-white/10 rounded-lg focus:border-orange-500 focus:ring-1 focus:ring-orange-500 outline-none transition-all text-white placeholder-gray-500 text-sm">
-                                <p class="text-xs text-gray-600 mt-1">Prerequisites, authentication methods</p>
-                            </div>
-                            
-                            <div>
-                                <label class="block text-xs font-medium text-gray-400 mb-1">Connector Overview URL</label>
-                                <input type="text" x-model="newConnector.fivetran_urls.connector_overview_url"
-                                       placeholder="https://fivetran.com/docs/connectors/..."
-                                       class="w-full px-3 py-2 bg-black/40 border border-white/10 rounded-lg focus:border-orange-500 focus:ring-1 focus:ring-orange-500 outline-none transition-all text-white placeholder-gray-500 text-sm">
-                                <p class="text-xs text-gray-600 mt-1">Supported features, sync overview, limitations</p>
-                            </div>
-                            
-                            <div>
-                                <label class="block text-xs font-medium text-gray-400 mb-1">Schema Information URL</label>
-                                <input type="text" x-model="newConnector.fivetran_urls.schema_info_url"
-                                       placeholder="https://fivetran.com/docs/connectors/.../schema"
-                                       class="w-full px-3 py-2 bg-black/40 border border-white/10 rounded-lg focus:border-orange-500 focus:ring-1 focus:ring-orange-500 outline-none transition-all text-white placeholder-gray-500 text-sm">
-                                <p class="text-xs text-gray-600 mt-1">Objects, parent-child relationships, sync modes</p>
-                            </div>
-                            
-                            <!-- Manual Object Input Section -->
-                            <div class="border-t border-white/10 pt-4 mt-4">
-                                <div class="flex items-center gap-2 mb-3">
-                                    <svg class="w-4 h-4 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path>
-                                    </svg>
-                                    <span class="text-xs font-medium text-cyan-300">Manual Object List (Alternative)</span>
-                                </div>
-                                <p class="text-xs text-gray-500 mb-3">Upload a CSV/PDF file or paste object names if Fivetran docs can't be scraped.</p>
-                                
-                                <!-- File Upload -->
-                                <div class="mb-3">
-                                    <label class="block text-xs font-medium text-gray-400 mb-1">Upload CSV or PDF</label>
-                                    <div class="flex items-center gap-2">
-                                        <label class="flex-1 flex items-center justify-center px-3 py-3 bg-black/40 border border-dashed border-white/20 hover:border-cyan-500/50 rounded-lg cursor-pointer transition-colors group">
-                                            <input type="file" 
-                                                   accept=".csv,.pdf"
-                                                   @change="handleFileUpload($event)"
-                                                   class="hidden">
-                                            <div class="text-center">
-                                                <svg class="w-6 h-6 text-gray-500 group-hover:text-cyan-400 mx-auto mb-1 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 13h6m-3-3v6m5 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
-                                                </svg>
-                                                <span x-show="!newConnector.manual_file" class="text-xs text-gray-500 group-hover:text-gray-300 transition-colors">Click to upload CSV or PDF</span>
-                                                <span x-show="newConnector.manual_file" class="text-xs text-cyan-400" x-text="newConnector.manual_file?.name"></span>
-                                            </div>
-                                        </label>
-                                        <button x-show="newConnector.manual_file" 
-                                                type="button"
-                                                @click="clearFileUpload()"
-                                                class="px-3 py-3 bg-red-500/20 hover:bg-red-500/30 text-red-400 rounded-lg transition-colors">
-                                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
-                                            </svg>
-                                        </button>
-                                    </div>
-                                    <p class="text-xs text-gray-600 mt-1">CSV format: object_name,sync_mode,parent,primary_key,cursor_field,delete_method</p>
-                                </div>
-                                
-                                <!-- Text Input -->
-                                <div>
-                                    <label class="block text-xs font-medium text-gray-400 mb-1">Or Paste Object Names</label>
-                                    <textarea x-model="newConnector.manual_text"
-                                              placeholder="accounts&#10;contacts&#10;opportunities&#10;campaigns"
-                                              rows="3"
-                                              class="w-full px-3 py-2 bg-black/40 border border-white/10 rounded-lg focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 outline-none transition-all text-white placeholder-gray-500 text-sm resize-none"></textarea>
-                                    <p class="text-xs text-gray-600 mt-1">One object per line, or comma-separated</p>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                        
-                    <div class="bg-indigo-500/10 border border-indigo-500/20 rounded-xl p-4">
-                        <div class="flex items-start gap-3">
-                            <svg class="w-5 h-5 text-indigo-400 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-                            </svg>
-                            <div>
-                                <p class="text-sm text-indigo-300 font-medium">Research Sources</p>
-                                <p class="text-xs text-gray-400 mt-1">The agent will use: Web search (Tavily), GitHub analysis (if provided), Fivetran parity (if provided), and official docs</p>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-                    
-                <div class="flex items-center justify-end gap-3 mt-6 pt-4 border-t border-white/10">
-                    <button type="button" @click="showNewConnectorModal = false" class="px-6 py-3 text-gray-400 hover:text-white transition-colors">Cancel</button>
-                    <button type="submit" 
-                            :disabled="!newConnector.name || isCreatingConnector"
-                            class="px-6 py-3 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed rounded-xl font-medium transition-colors flex items-center gap-2">
-                        <span x-show="isCreatingConnector" class="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
-                        <span x-text="isCreatingConnector ? 'Creating...' : 'Create Connector'"></span>
-                    </button>
-                </div>
-            </form>
-        </div>
-    </div>
+    <!-- New Connector Modal - REMOVED: Connector creation is CLI-only -->
     
     <!-- Confirmation Modal -->
     <div x-show="showConfirmModal" 
