@@ -3042,7 +3042,7 @@ The following objects were found in your pre-indexed documentation. Include ALL 
 
 """
 
-        user_prompt = f"""Generate Section {section.number}: {section.name} for the {connector_name} connector research document.
+            user_prompt = f"""Generate Section {section.number}: {section.name} for the {connector_name} connector research document.
 
 Connector Type: {connector_type}
 Phase: {section.phase_name}

@@ -8,57 +8,33 @@ import os
 from typing import Optional, List, Dict, Any, Callable
 from pathlib import Path
 
-# Add webapp directory to path for imports
+# Add project root to path for imports
 webapp_dir = Path(__file__).parent.parent
 project_root = webapp_dir.parent
 sys.path.insert(0, str(project_root))
 
-# Try both import styles (for running from scripts/ or webapp/)
-try:
-    from services.research_agent import (
-        get_research_agent, 
-        ResearchAgent,
-        ResearchSection,
-        BASE_SECTIONS,
-        CROSS_CUTTING_SECTIONS,
-        FINAL_SECTIONS,
-        FUNCTIONAL_SECTIONS,
-        OPERATIONAL_SECTIONS,
-        create_method_section
-    )
-    from services.connector_manager import get_connector_manager
-    from services.knowledge_vault import get_knowledge_vault
-    from services.llm_crawler_service import get_llm_crawler_service
-    from services.doc_registry import get_official_doc_urls
-    from services.github_cloner import get_github_cloner
-    from cli.interactive_prompts import (
-        prompt_section_action,
-        prompt_additional_urls,
-        prompt_additional_context
-    )
-except ImportError:
-    # Fallback for running from scripts/
-    from webapp.services.research_agent import (
-        get_research_agent, 
-        ResearchAgent,
-        ResearchSection,
-        BASE_SECTIONS,
-        CROSS_CUTTING_SECTIONS,
-        FINAL_SECTIONS,
-        FUNCTIONAL_SECTIONS,
-        OPERATIONAL_SECTIONS,
-        create_method_section
-    )
-    from webapp.services.connector_manager import get_connector_manager
-    from webapp.services.knowledge_vault import get_knowledge_vault
-    from webapp.services.llm_crawler_service import get_llm_crawler_service
-    from webapp.services.doc_registry import get_official_doc_urls
-    from webapp.services.github_cloner import get_github_cloner
-    from webapp.cli.interactive_prompts import (
-        prompt_section_action,
-        prompt_additional_urls,
-        prompt_additional_context
-    )
+# Always use webapp.* imports (works from both scripts/ and webapp/ directories)
+from webapp.services.research_agent import (
+    get_research_agent, 
+    ResearchAgent,
+    ResearchSection,
+    BASE_SECTIONS,
+    CROSS_CUTTING_SECTIONS,
+    FINAL_SECTIONS,
+    FUNCTIONAL_SECTIONS,
+    OPERATIONAL_SECTIONS,
+    create_method_section
+)
+from webapp.services.connector_manager import get_connector_manager
+from webapp.services.knowledge_vault import get_knowledge_vault, KnowledgeSourceType
+from webapp.services.llm_crawler_service import get_llm_crawler_service
+from webapp.services.doc_registry import get_official_doc_urls
+from webapp.services.github_cloner import get_github_cloner
+from webapp.cli.interactive_prompts import (
+    prompt_section_action,
+    prompt_additional_urls,
+    prompt_additional_context
+)
 
 from rich.console import Console
 from rich.panel import Panel
