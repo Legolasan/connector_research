@@ -4,6 +4,14 @@ A modern, enterprise-ready platform for generating comprehensive research docume
 
 ## ✨ Key Features
 
+### 🖥️ Interactive CLI for Research Generation (NEW)
+- **Section-by-Section Review**: Review and approve each section before proceeding
+- **Refinement Mode**: Provide additional URLs or context to improve sections
+- **Real-time Logging**: See detailed progress for each step (crawling, indexing, generation)
+- **Flexible Workflow**: Approve, reject, refine, or skip sections as needed
+- **Automatic Documentation Crawling**: Uses `llm-crawler` for smart content extraction
+- **Rich Terminal UI**: Beautiful formatting with `rich` library for better readability
+
 ### 🔍 Multi-Source Knowledge Retrieval
 - **Knowledge Vault**: Pre-indexed official documentation with highest confidence scoring
 - **DocWhisperer™**: Official library documentation via Context7 MCP integration
@@ -182,6 +190,30 @@ playwright install chromium  # For JS-rendered page crawling
 ```
 
 3. **Set up environment variables:**
+
+**Option A: Using `.env` file (Recommended)**
+```bash
+# Copy the example file
+cp .env.example .env
+
+# Edit .env with your actual keys
+nano .env  # or use your preferred editor
+```
+
+The `.env` file should contain:
+```bash
+# Required
+OPENAI_API_KEY=your-openai-key
+TAVILY_API_KEY=your-tavily-key
+DATABASE_URL=postgresql://user:pass@host:5432/dbname
+REDIS_URL=redis://localhost:6379/0
+
+# Optional
+RESEARCH_MODEL=gpt-5-mini-2025-08-07  # Default model
+API_KEY=your-api-key  # For API authentication
+```
+
+**Option B: Export in terminal**
 ```bash
 # Required
 export OPENAI_API_KEY="your-openai-key"
@@ -190,9 +222,11 @@ export DATABASE_URL="postgresql://user:pass@host:5432/dbname"
 export REDIS_URL="redis://localhost:6379/0"
 
 # Optional
-export RESEARCH_MODEL="gpt-4o"  # Default model
+export RESEARCH_MODEL="gpt-5-mini-2025-08-07"  # Default model
 export API_KEY="your-api-key"   # For API authentication
 ```
+
+**Note:** The application automatically loads `.env` files using `python-dotenv`. Make sure `.env` is in your `.gitignore` to avoid committing secrets!
 
 4. **Initialize database:**
 ```bash
@@ -266,12 +300,65 @@ python scripts/research_cli.py <connector_name> \
     --output <output_file.md>
 ```
 
-The interactive CLI will:
-1. Crawl and index official documentation
-2. Clone and analyze GitHub repositories (if provided)
-3. Generate research sections one-by-one
-4. Allow you to review, approve, reject, refine, or skip each section
-5. Save the final research document
+The interactive CLI workflow:
+
+1. **Documentation Crawling & Indexing**
+   - Automatically crawls official documentation URLs using `llm-crawler`
+   - Indexes content into Knowledge Vault for fast retrieval
+   - Falls back to legacy crawler if `llm-crawler` is unavailable
+
+2. **GitHub Repository Analysis** (if provided)
+   - Clones and analyzes repository structure
+   - Extracts code patterns and implementation details
+   - Auto-indexes code into Knowledge Vault
+
+3. **Section-by-Section Generation**
+   - Generates each research section sequentially
+   - Shows detailed logs for each step (crawling, indexing, generation)
+   - Displays the generated content in a formatted panel
+
+4. **Interactive Review**
+   After each section is generated, you can:
+   - **`y` (approve)**: Accept the section and continue
+   - **`n` (reject)**: Regenerate the section
+   - **`r` (refine)**: Provide additional URLs or context to improve the section
+   - **`s` (skip)**: Skip this section and move to the next
+
+5. **Refinement Mode**
+   When choosing `r` (refine):
+   - Provide additional documentation URLs to crawl
+   - Add custom context or notes
+   - The section will be regenerated with the new information
+
+6. **Final Document**
+   - All approved sections are combined into a complete research document
+   - Saved to the specified output file (or default: `{connector_name}_research.md`)
+   - Connector is created and appears in the web UI for viewing
+
+**Example Interactive Session:**
+```
+🔄 Generating Section 2: Extraction Methods Discovery
+  📚 Querying Knowledge Vault...
+  ✅ Found 15 relevant chunks
+  🔍 Performing targeted web search...
+  ✅ Generated section content
+
+[Section 2 content displayed in formatted panel]
+
+Section Review Options:
+  y - Approve and continue
+  n - Reject and regenerate
+  r - Refine (provide additional URLs/context)
+  s - Skip this section
+
+Action [y]: r
+Provide additional documentation URLs:
+URL: https://developer.example.com/api-reference
+URL: [Enter to finish]
+
+Additional context or notes: Include GraphQL endpoint details
+✅ Regenerated section with additional context
+```
 
 After creation, connectors will appear in the web UI for viewing and management.
 
@@ -315,8 +402,8 @@ After creation, connectors will appear in the web UI for viewing and management.
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | GET | `/api/connectors` | List all connectors |
-| POST | `/api/connectors` | Create new connector |
-| POST | `/api/connectors/upload` | Create with file upload |
+| POST | `/api/connectors` | Create new connector (CLI can use, UI disabled) |
+| POST | `/api/connectors/upload` | Create with file upload (CLI can use, UI disabled) |
 | GET | `/api/connectors/{id}` | Get connector details |
 | DELETE | `/api/connectors/{id}` | Delete connector |
 | POST | `/api/connectors/{id}/generate` | Start research generation |
