@@ -412,6 +412,8 @@ After creation, connectors will appear in the web UI for viewing and management.
 | POST | `/api/connectors/{id}/cancel` | Cancel generation |
 | GET | `/api/connectors/{id}/research` | Get research document |
 
+**Note:** Connector creation endpoints remain functional for CLI use, but the web UI no longer provides a create form. Use the interactive CLI (`scripts/research_cli.py`) to create connectors.
+
 ### Citation Validation
 | Method | Endpoint | Description |
 |--------|----------|-------------|
@@ -491,7 +493,8 @@ connector_research/
 │   │   ├── uncertainty_model.py
 │   │   ├── engineering_cost_analyzer.py
 │   │   ├── knowledge_vault.py           # Document indexing
-│   │   ├── doc_crawler.py               # Official doc crawler
+│   │   ├── doc_crawler.py               # Official doc crawler (legacy)
+│   │   ├── llm_crawler_service.py       # llm-crawler wrapper (primary)
 │   │   ├── doc_registry.py              # Connector doc URLs
 │   │   ├── fivetran_crawler.py          # Fivetran doc crawler
 │   │   ├── github_cloner.py             # GitHub repo analysis
@@ -500,12 +503,18 @@ connector_research/
 │   │   ├── vector_manager.py
 │   │   ├── security.py                  # API security
 │   │   └── __init__.py
+│   ├── cli/                             # Interactive CLI (NEW)
+│   │   ├── __init__.py
+│   │   ├── research_interactive.py      # Main interactive workflow
+│   │   └── interactive_prompts.py       # User prompts and input
 │   ├── templates/
-│   │   ├── index.html                   # Main dashboard
+│   │   ├── index.html                   # Main dashboard (view-only)
 │   │   ├── base.html
 │   │   └── research_view.html           # Research viewer
 │   └── static/
 │       └── app.js                       # Frontend logic
+├── scripts/
+│   └── research_cli.py                # CLI entry point (NEW)
 ├── alembic/
 │   ├── env.py
 │   └── versions/                        # Database migrations
@@ -529,6 +538,7 @@ connector_research/
 ├── pytest.ini
 ├── Procfile
 ├── alembic.ini
+├── .env.example                         # Environment variables template (NEW)
 └── README.md
 ```
 
